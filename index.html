@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script type="module" src="script.js"></script>
 </head>
 <body>
@@ -15,8 +17,8 @@
         <header class="app-header">
             <div class="header-content">
                 <div class="header-brand">
-                    <h1 class="header-title">PACD Monitoring System</h1>
-                    <p class="header-subtitle">Public Assistance Complaint Desk</p>
+                    <h1 class="header-title">MEMSEC PACD Monitoring</h1>
+                    <p class="header-subtitle">MEMSEC Public Assistance Complaint Desk</p>
                 </div>
                 <div class="header-meta">
                     <div class="status-badge">
@@ -98,14 +100,14 @@
                             </div>
 
                             <div class="form-section">
-                                <h3 class="form-section-title">Customer Satisfaction Survey</h3>
+                                <h3 class="form-section-title">Customer Satisfaction Survey (Participation)</h3>
                                 <div class="form-grid">
                                     <div class="form-group">
-                                        <label class="form-label" for="yesCount">Yes:</label>
+                                        <label class="form-label" for="yesCount">Answered Survey:</label>
                                         <input type="number" id="yesCount" class="form-control" min="0" value="0" required>
                                     </div>
                                     <div class="form-group">
-                                        <label class="form-label" for="noCount">No:</label>
+                                        <label class="form-label" for="noCount">Did Not Answer:</label>
                                         <input type="number" id="noCount" class="form-control" min="0" value="0" required>
                                     </div>
                                 </div>
@@ -133,7 +135,10 @@
                                 <input type="date" id="filterDate" class="search-input" placeholder="Filter by date...">
                             </div>
                             <div class="btn-group">
-                                <button class="btn btn-secondary" id="exportCSV">Export to Excel</button>
+                                <button class="btn btn-secondary" id="exportCSV">Export All</button>
+                                <button class="btn btn-secondary" id="exportWeeklySummary">Weekly Summary</button>
+                                <button class="btn btn-secondary" id="exportMonthlySummary">Monthly Summary</button>
+                                <button class="btn btn-secondary" id="viewHistory">History</button>
                                 <button class="btn btn-secondary" id="backupData">Backup Data</button>
                                 <button class="btn btn-secondary" id="restoreData">Restore Data</button>
                             </div>
@@ -151,8 +156,8 @@
                                         <th>Yakap Assignment</th>
                                         <th>ER2</th>
                                         <th>Total</th>
-                                        <th>Yes</th>
-                                        <th>No</th>
+                                        <th>Answered</th>
+                                        <th>Not Answered</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -168,8 +173,9 @@
             <!-- Dashboard Tab -->
             <div id="dashboard" class="tab-panel">
                 <div class="card">
-                    <div class="card-header">
+                    <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
                         <h2 class="card-title">Dashboard</h2>
+                        <button class="btn btn-secondary" id="exportDashboardPDF">Export as PDF</button>
                     </div>
                     <div class="card-body">
                         <div class="stats-grid">
@@ -182,7 +188,7 @@
                                 <div class="stat-value" id="totalClientsServed">0</div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-label">Satisfaction Rate</div>
+                                <div class="stat-label">Survey Response Rate</div>
                                 <div class="stat-value" id="satisfactionRate">0%</div>
                             </div>
                             <div class="stat-card">
@@ -199,7 +205,7 @@
                                 </div>
                             </div>
                             <div class="chart-card">
-                                <h3 class="chart-title">Customer Satisfaction</h3>
+                                <h3 class="chart-title">Survey Participation</h3>
                                 <div class="chart-container">
                                     <canvas id="satisfactionChart"></canvas>
                                 </div>
@@ -258,11 +264,11 @@
                     </div>
                     <div class="form-grid">
                         <div class="form-group">
-                            <label class="form-label" for="editYesCount">Yes:</label>
+                            <label class="form-label" for="editYesCount">Answered Survey:</label>
                             <input type="number" id="editYesCount" class="form-control" min="0" required>
                         </div>
                         <div class="form-group">
-                            <label class="form-label" for="editNoCount">No:</label>
+                            <label class="form-label" for="editNoCount">Did Not Answer:</label>
                             <input type="number" id="editNoCount" class="form-control" min="0" required>
                         </div>
                     </div>
@@ -271,6 +277,47 @@
                         <button type="button" class="btn btn-secondary" id="cancelEdit">Cancel</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="historyModal" class="modal">
+        <div class="modal-content" style="max-width: 680px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Activity History</h3>
+                <button class="modal-close" id="closeHistoryModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="historyList" class="history-list">
+                    <p style="color: var(--gray-400); text-align:center; padding: 24px 0;">Loading history...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Summary Modal -->
+    <div id="exportSummaryModal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3 class="modal-title" id="exportSummaryTitle">Export Summary</h3>
+                <button class="modal-close" id="closeExportModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="weekPickerGroup" class="form-group" style="display:none;">
+                    <label class="form-label">Select Week</label>
+                    <input type="week" id="weekPicker" class="form-control">
+                    <p class="form-hint">Choose the week you want to export.</p>
+                </div>
+                <div id="monthPickerGroup" class="form-group" style="display:none;">
+                    <label class="form-label">Select Month</label>
+                    <input type="month" id="monthPicker" class="form-control">
+                    <p class="form-hint">Choose the month you want to export.</p>
+                </div>
+                <div class="btn-group" style="margin-top: 16px;">
+                    <button class="btn btn-primary" id="confirmExportSummary">Export</button>
+                    <button class="btn btn-secondary" id="closeExportModal2">Cancel</button>
+                </div>
             </div>
         </div>
     </div>

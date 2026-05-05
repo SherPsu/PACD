@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, limit } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBqr4zFXGfITzuSJhMLG29FMPlUMFcpuek",
@@ -61,8 +61,28 @@ class PACDMonitoringSystem {
 
         // Export and backup
         document.getElementById('exportCSV').addEventListener('click', () => this.exportToExcel());
+        document.getElementById('exportWeeklySummary').addEventListener('click', () => this.openExportModal('week'));
+        document.getElementById('exportMonthlySummary').addEventListener('click', () => this.openExportModal('month'));
         document.getElementById('backupData').addEventListener('click', () => this.backupData());
         document.getElementById('restoreData').addEventListener('click', () => this.restoreData());
+
+        // Dashboard PDF export
+        document.getElementById('exportDashboardPDF').addEventListener('click', () => this.exportDashboardPDF());
+
+        // History modal
+        document.getElementById('viewHistory').addEventListener('click', () => this.openHistoryModal());
+        document.getElementById('closeHistoryModal').addEventListener('click', () => this.closeHistoryModal());
+        document.getElementById('historyModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('historyModal')) this.closeHistoryModal();
+        });
+
+        // Export summary modal
+        document.getElementById('closeExportModal').addEventListener('click', () => this.closeExportModal());
+        document.getElementById('closeExportModal2').addEventListener('click', () => this.closeExportModal());
+        document.getElementById('confirmExportSummary').addEventListener('click', () => this.confirmExportSummary());
+        document.getElementById('exportSummaryModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('exportSummaryModal')) this.closeExportModal();
+        });
 
         // File input for restore
         document.getElementById('fileInput').addEventListener('change', (e) => this.handleFileRestore(e));
@@ -129,24 +149,9 @@ class PACDMonitoringSystem {
         }
         
         if (satisfactionTotal > totalClients && totalClients > 0) {
-            // Add error styling
-            yesInput.style.borderColor = '#EF4444'; // Use direct color instead of CSS variable
+            yesInput.style.borderColor = '#EF4444';
             noInput.style.borderColor = '#EF4444';
-            
-            // Create and show error message
-            const errorDiv = document.createElement('div');
-            errorDiv.id = 'satisfaction-error';
-            errorDiv.style.color = '#EF4444';
-            errorDiv.style.fontSize = '14px';
-            errorDiv.style.marginTop = '8px';
-            errorDiv.textContent = `Total satisfaction responses (${satisfactionTotal}) cannot exceed total clients served (${totalClients})`;
-            
-            // Insert error message after the satisfaction survey section
-            const satisfactionSection = yesInput.closest('.form-section');
-            if (satisfactionSection) {
-                satisfactionSection.appendChild(errorDiv);
-            }
-            
+            this.showNotification(`Survey responses (${satisfactionTotal}) cannot exceed total clients served (${totalClients})`, 'error');
             return false;
         }
         
@@ -184,7 +189,8 @@ class PACDMonitoringSystem {
         };
         
         try {
-            await addDoc(collection(db, 'pacd_records'), formData);
+            const docRef = await addDoc(collection(db, 'pacd_records'), formData);
+            await this.logActivity('added', docRef.id, formData.officer_name, formData.date);
             this.clearForm();
             this.showNotification('Record saved successfully!', 'success');
         } catch (error) {
@@ -292,14 +298,16 @@ class PACDMonitoringSystem {
         const noCount  = parseInt(document.getElementById('editNoCount').value) || 0;
         
         if ((yesCount + noCount) > total && total > 0) {
-            this.showNotification(`Satisfaction responses cannot exceed total clients served (${total})`, 'error');
+            this.showNotification(`Survey responses cannot exceed total clients served (${total})`, 'error');
             return;
         }
         
+        const editedDate = document.getElementById('editDate').value;
+        const editedOfficer = document.getElementById('editOfficerName').value;
         try {
             await updateDoc(doc(db, 'pacd_records', firestoreId), {
-                date:             document.getElementById('editDate').value,
-                officer_name:     document.getElementById('editOfficerName').value,
+                date:             editedDate,
+                officer_name:     editedOfficer,
                 new_member:       parseInt(document.getElementById('editNewMember').value) || 0,
                 amendment:        parseInt(document.getElementById('editAmendment').value) || 0,
                 yakap_assignment: parseInt(document.getElementById('editYakapAssignment').value) || 0,
@@ -308,6 +316,7 @@ class PACDMonitoringSystem {
                 yes_count:        yesCount,
                 no_count:         noCount
             });
+            await this.logActivity('edited', firestoreId, editedOfficer, editedDate);
             this.closeEditModal();
             this.showNotification('Record updated successfully!', 'success');
         } catch (error) {
@@ -319,13 +328,74 @@ class PACDMonitoringSystem {
     async deleteRecord(firestoreId) {
         if (confirm('Are you sure you want to delete this record?')) {
             try {
+                const record = this.records.find(r => r.id === firestoreId);
                 await deleteDoc(doc(db, 'pacd_records', firestoreId));
+                await this.logActivity('deleted', firestoreId, record?.officer_name || 'Unknown', record?.date || '');
                 this.showNotification('Record deleted successfully!', 'success');
             } catch (error) {
                 console.error('Delete record error:', error);
                 this.showNotification('Error deleting record. Please try again.', 'error');
             }
         }
+    }
+
+    async logActivity(action, recordId, officerName, date) {
+        try {
+            await addDoc(collection(db, 'pacd_activity_log'), {
+                action,
+                record_id:    recordId,
+                officer_name: officerName,
+                record_date:  date,
+                timestamp:    serverTimestamp()
+            });
+        } catch (e) {
+            console.error('Log activity error:', e);
+        }
+    }
+
+    async openHistoryModal() {
+        document.getElementById('historyModal').classList.add('active');
+        const listEl = document.getElementById('historyList');
+        listEl.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:24px 0;">Loading...</p>';
+
+        try {
+            const q = query(collection(db, 'pacd_activity_log'), orderBy('timestamp', 'desc'), limit(100));
+            const snapshot = await getDocs(q);
+
+            if (snapshot.empty) {
+                listEl.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:24px 0;">No activity recorded yet.</p>';
+                return;
+            }
+
+            const actionMeta = {
+                added:   { label: 'Added',   color: '#10B981', bg: '#D1FAE5' },
+                edited:  { label: 'Edited',  color: '#3B82F6', bg: '#DBEAFE' },
+                deleted: { label: 'Deleted', color: '#EF4444', bg: '#FEE2E2' }
+            };
+
+            listEl.innerHTML = snapshot.docs.map(d => {
+                const log = d.data();
+                const m = actionMeta[log.action] || actionMeta.edited;
+                const ts = log.timestamp?.toDate();
+                const timeStr = ts ? ts.toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' }) : 'Just now';
+                return `
+                    <div class="history-item">
+                        <div class="history-badge" style="background:${m.bg};color:${m.color};">${m.label}</div>
+                        <div class="history-details">
+                            <span class="history-officer">${log.officer_name}</span>
+                            <span class="history-meta">Record date: ${log.record_date}</span>
+                        </div>
+                        <div class="history-time">${timeStr}</div>
+                    </div>`;
+            }).join('');
+        } catch (error) {
+            console.error('Load history error:', error);
+            listEl.innerHTML = '<p style="color:var(--error);text-align:center;padding:24px 0;">Error loading history.</p>';
+        }
+    }
+
+    closeHistoryModal() {
+        document.getElementById('historyModal').classList.remove('active');
     }
 
     closeEditModal() {
@@ -360,7 +430,7 @@ class PACDMonitoringSystem {
         const totalYes = records.reduce((sum, record) => sum + record.yes_count, 0);
         const totalNo = records.reduce((sum, record) => sum + record.no_count, 0);
         const totalResponses = totalYes + totalNo;
-        const satisfactionRate = totalResponses > 0 ? ((totalYes / totalResponses) * 100).toFixed(1) : 0;
+        const satisfactionRate = totalClients > 0 ? ((totalYes / totalClients) * 100).toFixed(1) : 0;
         const avgDailyClients = totalRecords > 0 ? Math.round(totalClients / totalRecords) : 0;
         
         document.getElementById('totalRecords').textContent = totalRecords;
@@ -459,7 +529,7 @@ class PACDMonitoringSystem {
         satisfactionChart = new Chart(satisfactionCtx, {
             type: 'doughnut',
             data: {
-                labels: ['Satisfied (Yes)', 'Unsatisfied (No)'],
+                labels: ['Answered Survey', 'Did Not Answer'],
                 datasets: [{
                     data: [totalYes, totalNo],
                     backgroundColor: ['#00875A', '#EF4444'],
@@ -519,8 +589,8 @@ class PACDMonitoringSystem {
                 'Yakap Assignment':   r.yakap_assignment,
                 'ER2':                r.er2,
                 'Total Clients':      r.total_clients,
-                'Yes Count':          r.yes_count,
-                'No Count':           r.no_count
+                'Answered Survey':    r.yes_count,
+                'Did Not Answer':     r.no_count
             }));
 
             const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -549,6 +619,257 @@ class PACDMonitoringSystem {
         } catch (error) {
             console.error('Excel export error:', error);
             this.showNotification('Error exporting data to Excel.', 'error');
+        }
+    }
+
+    async exportDashboardPDF() {
+        const btn = document.getElementById('exportDashboardPDF');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = 'Generating...';
+        btn.disabled = true;
+
+        try {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+            const pageW = pdf.internal.pageSize.getWidth();
+            const pageH = pdf.internal.pageSize.getHeight();
+            const margin = 12;
+
+            // ── Header ──
+            pdf.setFillColor(0, 135, 90);
+            pdf.rect(0, 0, pageW, 22, 'F');
+            pdf.setTextColor(255, 255, 255);
+            pdf.setFontSize(14);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('PACD Monitoring System — Dashboard Report', margin, 14);
+            pdf.setFontSize(8);
+            pdf.setFont('helvetica', 'normal');
+            pdf.text(`Generated: ${new Date().toLocaleString()}`, pageW - margin, 14, { align: 'right' });
+
+            // ── Stats summary ──
+            pdf.setTextColor(30, 41, 59);
+            pdf.setFontSize(10);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('Summary Statistics', margin, 32);
+
+            const stats = [
+                ['Total Records',        document.getElementById('totalRecords').textContent],
+                ['Total Clients Served', document.getElementById('totalClientsServed').textContent],
+                ['Satisfaction Rate',    document.getElementById('satisfactionRate').textContent],
+                ['Avg Daily Clients',    document.getElementById('avgDailyClients').textContent]
+            ];
+
+            const cellW = (pageW - margin * 2) / 4;
+            stats.forEach(([label, value], i) => {
+                const x = margin + i * cellW;
+                pdf.setFillColor(241, 248, 241);
+                pdf.roundedRect(x, 35, cellW - 2, 18, 2, 2, 'F');
+                pdf.setFontSize(7);
+                pdf.setFont('helvetica', 'normal');
+                pdf.setTextColor(100, 116, 139);
+                pdf.text(label, x + (cellW - 2) / 2, 41, { align: 'center' });
+                pdf.setFontSize(12);
+                pdf.setFont('helvetica', 'bold');
+                pdf.setTextColor(0, 135, 90);
+                pdf.text(value, x + (cellW - 2) / 2, 49, { align: 'center' });
+            });
+
+            // ── Charts ──
+            pdf.setTextColor(30, 41, 59);
+            pdf.setFontSize(10);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('Charts', margin, 63);
+
+            const chartIds = ['clientsChart', 'satisfactionChart'];
+            const chartTitles = ['Clients Served Trend', 'Customer Satisfaction'];
+            const chartW = (pageW - margin * 2 - 6) / 2;
+            const chartH = chartW * 0.65;
+
+            for (let i = 0; i < chartIds.length; i++) {
+                const canvas = document.getElementById(chartIds[i]);
+                const imgData = canvas.toDataURL('image/png', 1.0);
+                const x = margin + i * (chartW + 6);
+                const y = 66;
+                pdf.setFillColor(255, 255, 255);
+                pdf.setDrawColor(226, 232, 240);
+                pdf.roundedRect(x, y, chartW, chartH + 8, 2, 2, 'FD');
+                pdf.setFontSize(8);
+                pdf.setFont('helvetica', 'bold');
+                pdf.setTextColor(51, 65, 85);
+                pdf.text(chartTitles[i], x + chartW / 2, y + 6, { align: 'center' });
+                pdf.addImage(imgData, 'PNG', x + 2, y + 8, chartW - 4, chartH - 2);
+            }
+
+            const filename = `pacd_dashboard_${new Date().toISOString().split('T')[0]}.pdf`;
+            pdf.save(filename);
+            this.showNotification('Dashboard exported as PDF!', 'success');
+        } catch (error) {
+            console.error('PDF export error:', error);
+            this.showNotification('Error exporting dashboard.', 'error');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    openExportModal(type) {
+        this._exportModalType = type;
+        const now = new Date();
+
+        if (type === 'week') {
+            document.getElementById('exportSummaryTitle').textContent = 'Export Weekly Summary';
+            document.getElementById('weekPickerGroup').style.display = 'block';
+            document.getElementById('monthPickerGroup').style.display = 'none';
+            // Default to current week (YYYY-Www format)
+            const year = now.getFullYear();
+            const startOfYear = new Date(year, 0, 1);
+            const weekNum = Math.ceil(((now - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
+            document.getElementById('weekPicker').value = `${year}-W${String(weekNum).padStart(2, '0')}`;
+        } else {
+            document.getElementById('exportSummaryTitle').textContent = 'Export Monthly Summary';
+            document.getElementById('monthPickerGroup').style.display = 'block';
+            document.getElementById('weekPickerGroup').style.display = 'none';
+            const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            document.getElementById('monthPicker').value = ym;
+        }
+
+        document.getElementById('exportSummaryModal').classList.add('active');
+    }
+
+    closeExportModal() {
+        document.getElementById('exportSummaryModal').classList.remove('active');
+    }
+
+    confirmExportSummary() {
+        if (this._exportModalType === 'week') {
+            const val = document.getElementById('weekPicker').value; // e.g. "2026-W19"
+            if (!val) { this.showNotification('Please select a week.', 'error'); return; }
+
+            // Parse YYYY-Www → Monday date
+            const [yearStr, weekStr] = val.split('-W');
+            const year = parseInt(yearStr);
+            const week = parseInt(weekStr);
+            const jan4 = new Date(year, 0, 4); // Jan 4 is always in week 1
+            const monday = new Date(jan4);
+            monday.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (week - 1) * 7);
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+
+            const fmt = d => d.toISOString().split('T')[0];
+            const weekStart = fmt(monday);
+            const weekEnd   = fmt(sunday);
+
+            const filtered = this.records.filter(r => r.date >= weekStart && r.date <= weekEnd);
+            if (filtered.length === 0) {
+                this.showNotification(`No records found for ${weekStart} to ${weekEnd}.`, 'warning');
+                return;
+            }
+            this.closeExportModal();
+            this._exportSummarySheet(filtered, `Weekly Summary: ${weekStart} to ${weekEnd}`, `pacd_weekly_${weekStart}_${weekEnd}.xlsx`);
+
+        } else {
+            const val = document.getElementById('monthPicker').value; // e.g. "2026-05"
+            if (!val) { this.showNotification('Please select a month.', 'error'); return; }
+
+            const [year, month] = val.split('-');
+            const monthStart = `${year}-${month}-01`;
+            const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+            const monthEnd = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+
+            const filtered = this.records.filter(r => r.date >= monthStart && r.date <= monthEnd);
+            if (filtered.length === 0) {
+                this.showNotification(`No records found for ${val}.`, 'warning');
+                return;
+            }
+            const monthLabel = new Date(`${year}-${month}-01`).toLocaleString('default', { month: 'long', year: 'numeric' });
+            this.closeExportModal();
+            this._exportSummarySheet(filtered, `Monthly Summary: ${monthLabel}`, `pacd_monthly_${val}.xlsx`);
+        }
+    }
+
+    _exportSummarySheet(records, title, filename) {
+        try {
+            // Sort by date
+            const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
+
+            // ── Detail rows ──
+            const detailRows = sorted.map(r => ({
+                'Date':               r.date,
+                'Officer Name':       r.officer_name,
+                'New Member':         r.new_member,
+                'Amendment':          r.amendment,
+                'Yakap Assignment':   r.yakap_assignment,
+                'ER2':                r.er2,
+                'Total Clients':      r.total_clients,
+                'Answered Survey':    r.yes_count,
+                'Did Not Answer':     r.no_count
+            }));
+
+            // ── Totals row ──
+            const tot = (key) => sorted.reduce((s, r) => s + (r[key] || 0), 0);
+            const totalYes = tot('yes_count');
+            const totalClients = tot('total_clients');
+            const satRate = totalClients > 0 ? ((totalYes / totalClients) * 100).toFixed(1) + '%' : 'N/A';
+
+            detailRows.push({
+                'Date':               'TOTAL',
+                'Officer Name':       '',
+                'New Member':         tot('new_member'),
+                'Amendment':          tot('amendment'),
+                'Yakap Assignment':   tot('yakap_assignment'),
+                'ER2':                tot('er2'),
+                'Total Clients':      totalClients,
+                'Answered Survey':    totalYes,
+                'Did Not Answer':     tot('no_count')
+            });
+
+            // ── Per-officer summary ──
+            const byOfficer = {};
+            sorted.forEach(r => {
+                if (!byOfficer[r.officer_name]) {
+                    byOfficer[r.officer_name] = { days: 0, new_member: 0, amendment: 0, yakap_assignment: 0, er2: 0, total_clients: 0, yes_count: 0, no_count: 0 };
+                }
+                const o = byOfficer[r.officer_name];
+                o.days++;
+                o.new_member       += r.new_member || 0;
+                o.amendment        += r.amendment || 0;
+                o.yakap_assignment += r.yakap_assignment || 0;
+                o.er2              += r.er2 || 0;
+                o.total_clients    += r.total_clients || 0;
+                o.yes_count        += r.yes_count || 0;
+                o.no_count         += r.no_count || 0;
+            });
+
+            const officerRows = Object.entries(byOfficer).map(([name, o]) => ({
+                'Officer Name':       name,
+                'Days':               o.days,
+                'New Member':         o.new_member,
+                'Amendment':          o.amendment,
+                'Yakap Assignment':   o.yakap_assignment,
+                'ER2':                o.er2,
+                'Total Clients':      o.total_clients,
+                'Answered Survey':    o.yes_count,
+                'Did Not Answer':     o.no_count,
+                'Survey Response Rate': o.total_clients > 0 ? ((o.yes_count / o.total_clients) * 100).toFixed(1) + '%' : 'N/A'
+            }));
+
+            const workbook = XLSX.utils.book_new();
+
+            // Sheet 1 — Daily Detail
+            const ws1 = XLSX.utils.json_to_sheet(detailRows);
+            ws1['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 8 }, { wch: 14 }, { wch: 16 }, { wch: 16 }];
+            XLSX.utils.book_append_sheet(workbook, ws1, 'Daily Detail');
+
+            // Sheet 2 — Officer Summary
+            const ws2 = XLSX.utils.json_to_sheet(officerRows);
+            ws2['!cols'] = [{ wch: 28 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 8 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 18 }];
+            XLSX.utils.book_append_sheet(workbook, ws2, 'Officer Summary');
+
+            XLSX.writeFile(workbook, filename);
+            this.showNotification(`"${title}" exported successfully!`, 'success');
+        } catch (error) {
+            console.error('Summary export error:', error);
+            this.showNotification('Error exporting summary.', 'error');
         }
     }
 
