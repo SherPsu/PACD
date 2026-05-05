@@ -1,94 +1,34 @@
-let db = null;
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyBqr4zFXGfITzuSJhMLG29FMPlUMFcpuek",
+    authDomain: "pacd-59a6d.firebaseapp.com",
+    projectId: "pacd-59a6d",
+    storageBucket: "pacd-59a6d.firebasestorage.app",
+    messagingSenderId: "278480981552",
+    appId: "1:278480981552:web:c5198de402ab1ec6a9a7f5",
+    measurementId: "G-0Q2TGQ0G8Y"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+
 let clientsChart = null;
 let satisfactionChart = null;
 
 class PACDMonitoringSystem {
     constructor() {
-        // Add manual reset function to console for debugging
-        window.resetDatabase = () => {
-            try {
-                localStorage.removeItem('pacd_database');
-                console.log('Database cleared from localStorage. Please refresh the page.');
-                this.showNotification('Database cleared. Please refresh the page.', 'info');
-            } catch (error) {
-                console.error('Error clearing database:', error);
-            }
-        };
-        
+        this.records = [];
         this.init();
     }
 
     async init() {
-        await this.initDatabase();
         this.setupEventListeners();
-        this.loadRecords();
-        this.updateDashboard();
+        this.listenRecords();
         this.setDefaultDate();
         this.updateLastUpdated();
         this.startClock();
-    }
-
-    async initDatabase() {
-        try {
-            const SQL = await initSqlJs({
-                locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
-            });
-            
-            const data = localStorage.getItem('pacd_database');
-            if (data) {
-                const uInt8Array = new Uint8Array(JSON.parse(data));
-                db = new SQL.Database(uInt8Array);
-            } else {
-                db = new SQL.Database();
-                this.createTables();
-            }
-        } catch (error) {
-            console.error('Database initialization error:', error);
-            this.showNotification('Database initialization failed. Please refresh the page.', 'error');
-        }
-    }
-
-    createTables() {
-        // First, drop the table if it exists to ensure clean creation
-        try {
-            db.run("DROP TABLE IF EXISTS pacd_records");
-            console.log('Dropped existing table');
-        } catch (dropError) {
-            console.log('No existing table to drop');
-        }
-        
-        const createTableSQL = `
-            CREATE TABLE pacd_records (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                officer_name TEXT NOT NULL,
-                new_member INTEGER NOT NULL DEFAULT 0,
-                amendment INTEGER NOT NULL DEFAULT 0,
-                yakap_assignment INTEGER NOT NULL DEFAULT 0,
-                er2 INTEGER NOT NULL DEFAULT 0,
-                total_clients INTEGER NOT NULL DEFAULT 0,
-                yes_count INTEGER NOT NULL DEFAULT 0,
-                no_count INTEGER NOT NULL DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        `;
-        
-        try {
-            db.run(createTableSQL);
-            console.log('Table created successfully');
-            this.saveDatabase();
-        } catch (error) {
-            console.error('Table creation error:', error);
-        }
-    }
-
-    saveDatabase() {
-        try {
-            const data = db.export();
-            localStorage.setItem('pacd_database', JSON.stringify(Array.from(data)));
-        } catch (error) {
-            console.error('Database save error:', error);
-        }
     }
 
     setupEventListeners() {
@@ -213,30 +153,20 @@ class PACDMonitoringSystem {
         return true;
     }
 
-    handleFormSubmit(e) {
+    async handleFormSubmit(e) {
         e.preventDefault();
         
         const dateField = document.getElementById('date');
-        
-        // Ensure date is always set
         this.setDefaultDate();
         
-        // Validate satisfaction survey before submission
         if (!this.validateSatisfactionSurvey()) {
             this.showNotification('Please fix the validation errors before submitting.', 'error');
             return;
         }
         
-        // Validate required fields
         const officerName = document.getElementById('officerName').value;
         if (!officerName) {
             this.showNotification('Please select an officer name.', 'error');
-            return;
-        }
-        
-        // Double-check date is set
-        if (!dateField.value) {
-            this.showNotification('Date field is not set. Please try again.', 'error');
             return;
         }
         
@@ -249,20 +179,13 @@ class PACDMonitoringSystem {
             er2: parseInt(document.getElementById('er2').value) || 0,
             total_clients: parseInt(document.getElementById('totalClients').value) || 0,
             yes_count: parseInt(document.getElementById('yesCount').value) || 0,
-            no_count: parseInt(document.getElementById('noCount').value) || 0
+            no_count: parseInt(document.getElementById('noCount').value) || 0,
+            created_at: new Date().toISOString()
         };
         
         try {
-            db.run(
-                `INSERT INTO pacd_records (date, officer_name, new_member, amendment, yakap_assignment, er2, total_clients, yes_count, no_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [formData.date, formData.officer_name, formData.new_member, formData.amendment,
-                 formData.yakap_assignment, formData.er2, formData.total_clients, formData.yes_count, formData.no_count]
-            );
-            this.saveDatabase();
+            await addDoc(collection(db, 'pacd_records'), formData);
             this.clearForm();
-            this.loadRecords();
-            this.updateDashboard();
             this.showNotification('Record saved successfully!', 'success');
         } catch (error) {
             console.error('Form submission error:', error);
@@ -290,30 +213,25 @@ class PACDMonitoringSystem {
     setDefaultDate() {
         const today = new Date().toISOString().split('T')[0];
         const dateField = document.getElementById('date');
-        console.log('Setting default date to:', today);
-        console.log('Date field element in setDefaultDate:', dateField);
-        if (dateField) {
-            dateField.value = today;
-            console.log('Date field value after setting:', dateField.value);
-        } else {
-            console.error('Date field not found!');
-        }
+        if (dateField) dateField.value = today;
+    }
+
+    listenRecords() {
+        const q = query(collection(db, 'pacd_records'), orderBy('date', 'desc'));
+        onSnapshot(q, (snapshot) => {
+            this.records = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            this.displayRecords(this.records);
+            this.updateStats(this.records);
+            this.updateCharts(this.records);
+            this.updateLastUpdated();
+        }, (error) => {
+            console.error('Firestore listen error:', error);
+            this.showNotification('Error loading records.', 'error');
+        });
     }
 
     loadRecords() {
-        try {
-            const stmt = db.prepare('SELECT * FROM pacd_records ORDER BY date DESC, created_at DESC');
-            const records = [];
-            while (stmt.step()) {
-                records.push(stmt.getAsObject());
-            }
-            stmt.free();
-            
-            this.displayRecords(records);
-        } catch (error) {
-            console.error('Load records error:', error);
-            this.showNotification('Error loading records.', 'error');
-        }
+        this.displayRecords(this.records);
     }
 
     displayRecords(records) {
@@ -338,86 +256,59 @@ class PACDMonitoringSystem {
                 <td>${record.no_count}</td>
                 <td>
                     <div class="action-buttons">
-                        <button class="btn-action btn-edit" onclick="app.editRecord(${record.id})" title="Edit">&#9998;</button>
-                        <button class="btn-action btn-delete" onclick="app.deleteRecord(${record.id})" title="Delete">&#128465;</button>
+                        <button class="btn-action btn-edit" onclick="app.editRecord('${record.id}')" title="Edit">&#9998;</button>
+                        <button class="btn-action btn-delete" onclick="app.deleteRecord('${record.id}')" title="Delete">&#128465;</button>
                     </div>
                 </td>
             </tr>
         `).join('');
     }
 
-    editRecord(id) {
-        try {
-            const stmt = db.prepare('SELECT * FROM pacd_records WHERE id = ?');
-            stmt.bind([id]);
-            
-            let record = null;
-            if (stmt.step()) {
-                record = stmt.getAsObject();
-            }
-            stmt.free();
-            
-            if (record) {
-                document.getElementById('editId').value = record.id;
-                document.getElementById('editDate').value = record.date;
-                document.getElementById('editOfficerName').value = record.officer_name;
-                document.getElementById('editNewMember').value = record.new_member;
-                document.getElementById('editAmendment').value = record.amendment;
-                document.getElementById('editYakapAssignment').value = record.yakap_assignment;
-                document.getElementById('editEr2').value = record.er2;
-                document.getElementById('editYesCount').value = record.yes_count;
-                document.getElementById('editNoCount').value = record.no_count;
-                
-                document.getElementById('editModal').classList.add('active');
-            }
-        } catch (error) {
-            console.error('Edit record error:', error);
-            this.showNotification('Error loading record for editing.', 'error');
-        }
+    editRecord(firestoreId) {
+        const record = this.records.find(r => r.id === firestoreId);
+        if (!record) return;
+        document.getElementById('editId').value = firestoreId;
+        document.getElementById('editDate').value = record.date;
+        document.getElementById('editOfficerName').value = record.officer_name;
+        document.getElementById('editNewMember').value = record.new_member;
+        document.getElementById('editAmendment').value = record.amendment;
+        document.getElementById('editYakapAssignment').value = record.yakap_assignment;
+        document.getElementById('editEr2').value = record.er2;
+        document.getElementById('editYesCount').value = record.yes_count;
+        document.getElementById('editNoCount').value = record.no_count;
+        document.getElementById('editModal').classList.add('active');
     }
 
-    handleEditSubmit(e) {
+    async handleEditSubmit(e) {
         e.preventDefault();
         
-        const id = parseInt(document.getElementById('editId').value);
+        const firestoreId = document.getElementById('editId').value;
         const total = (parseInt(document.getElementById('editNewMember').value) || 0) +
                      (parseInt(document.getElementById('editAmendment').value) || 0) +
                      (parseInt(document.getElementById('editYakapAssignment').value) || 0) +
                      (parseInt(document.getElementById('editEr2').value) || 0);
         
         const yesCount = parseInt(document.getElementById('editYesCount').value) || 0;
-        const noCount = parseInt(document.getElementById('editNoCount').value) || 0;
-        const satisfactionTotal = yesCount + noCount;
+        const noCount  = parseInt(document.getElementById('editNoCount').value) || 0;
         
-        // Validate satisfaction survey for edit form
-        if (satisfactionTotal > total && total > 0) {
-            this.showNotification(`Total satisfaction responses (${satisfactionTotal}) cannot exceed total clients served (${total})`, 'error');
+        if ((yesCount + noCount) > total && total > 0) {
+            this.showNotification(`Satisfaction responses cannot exceed total clients served (${total})`, 'error');
             return;
         }
         
         try {
-            db.run(
-                `UPDATE pacd_records 
-                SET date = ?, officer_name = ?, new_member = ?, amendment = ?, yakap_assignment = ?, 
-                    er2 = ?, total_clients = ?, yes_count = ?, no_count = ?
-                WHERE id = ?`,
-                [
-                    document.getElementById('editDate').value,
-                    document.getElementById('editOfficerName').value,
-                    parseInt(document.getElementById('editNewMember').value) || 0,
-                    parseInt(document.getElementById('editAmendment').value) || 0,
-                    parseInt(document.getElementById('editYakapAssignment').value) || 0,
-                    parseInt(document.getElementById('editEr2').value) || 0,
-                    total,
-                    parseInt(document.getElementById('editYesCount').value) || 0,
-                    parseInt(document.getElementById('editNoCount').value) || 0,
-                    id
-                ]
-            );
-            this.saveDatabase();
+            await updateDoc(doc(db, 'pacd_records', firestoreId), {
+                date:             document.getElementById('editDate').value,
+                officer_name:     document.getElementById('editOfficerName').value,
+                new_member:       parseInt(document.getElementById('editNewMember').value) || 0,
+                amendment:        parseInt(document.getElementById('editAmendment').value) || 0,
+                yakap_assignment: parseInt(document.getElementById('editYakapAssignment').value) || 0,
+                er2:              parseInt(document.getElementById('editEr2').value) || 0,
+                total_clients:    total,
+                yes_count:        yesCount,
+                no_count:         noCount
+            });
             this.closeEditModal();
-            this.loadRecords();
-            this.updateDashboard();
             this.showNotification('Record updated successfully!', 'success');
         } catch (error) {
             console.error('Edit submission error:', error);
@@ -425,14 +316,10 @@ class PACDMonitoringSystem {
         }
     }
 
-    deleteRecord(id) {
+    async deleteRecord(firestoreId) {
         if (confirm('Are you sure you want to delete this record?')) {
             try {
-                db.run('DELETE FROM pacd_records WHERE id = ?', [id]);
-                
-                this.saveDatabase();
-                this.loadRecords();
-                this.updateDashboard();
+                await deleteDoc(doc(db, 'pacd_records', firestoreId));
                 this.showNotification('Record deleted successfully!', 'success');
             } catch (error) {
                 console.error('Delete record error:', error);
@@ -449,51 +336,22 @@ class PACDMonitoringSystem {
         const searchTerm = document.getElementById('searchInput').value.toLowerCase();
         const filterDate = document.getElementById('filterDate').value;
         
-        try {
-            let query = 'SELECT * FROM pacd_records WHERE 1=1';
-            const params = [];
-            
-            if (searchTerm) {
-                query += ' AND (LOWER(officer_name) LIKE ? OR date LIKE ?)';
-                params.push(`%${searchTerm}%`, `%${searchTerm}%`);
-            }
-            
-            if (filterDate) {
-                query += ' AND date = ?';
-                params.push(filterDate);
-            }
-            
-            query += ' ORDER BY date DESC, created_at DESC';
-            
-            const stmt = db.prepare(query);
-            stmt.bind(params);
-            
-            const records = [];
-            while (stmt.step()) {
-                records.push(stmt.getAsObject());
-            }
-            stmt.free();
-            
-            this.displayRecords(records);
-        } catch (error) {
-            console.error('Filter records error:', error);
+        let filtered = this.records;
+        if (searchTerm) {
+            filtered = filtered.filter(r =>
+                r.officer_name.toLowerCase().includes(searchTerm) ||
+                r.date.includes(searchTerm)
+            );
         }
+        if (filterDate) {
+            filtered = filtered.filter(r => r.date === filterDate);
+        }
+        this.displayRecords(filtered);
     }
 
     updateDashboard() {
-        try {
-            const stmt = db.prepare('SELECT * FROM pacd_records ORDER BY date DESC');
-            const records = [];
-            while (stmt.step()) {
-                records.push(stmt.getAsObject());
-            }
-            stmt.free();
-            
-            this.updateStats(records);
-            this.updateCharts(records);
-        } catch (error) {
-            console.error('Dashboard update error:', error);
-        }
+        this.updateStats(this.records);
+        this.updateCharts(this.records);
     }
 
     updateStats(records) {
@@ -644,12 +502,7 @@ class PACDMonitoringSystem {
 
     exportToExcel() {
         try {
-            const stmt = db.prepare('SELECT * FROM pacd_records ORDER BY date DESC');
-            const records = [];
-            while (stmt.step()) {
-                records.push(stmt.getAsObject());
-            }
-            stmt.free();
+            const records = this.records;
 
             if (records.length === 0) {
                 this.showNotification('No records to export.', 'warning');
@@ -701,13 +554,7 @@ class PACDMonitoringSystem {
 
     backupData() {
         try {
-            const stmt = db.prepare('SELECT * FROM pacd_records ORDER BY date DESC');
-            const records = [];
-            while (stmt.step()) {
-                records.push(stmt.getAsObject());
-            }
-            stmt.free();
-            
+            const records = this.records;
             const backupData = {
                 version: '1.0',
                 exportDate: new Date().toISOString(),
@@ -738,7 +585,7 @@ class PACDMonitoringSystem {
         if (!file) return;
         
         const reader = new FileReader();
-        reader.onload = (event) => {
+        reader.onload = async (event) => {
             try {
                 const backupData = JSON.parse(event.target.result);
                 
@@ -746,36 +593,21 @@ class PACDMonitoringSystem {
                     throw new Error('Invalid backup file format');
                 }
                 
-                if (confirm('This will replace all existing data. Are you sure you want to continue?')) {
-                    // Clear existing data
-                    db.run('DELETE FROM pacd_records');
-                    
-                    // Insert backup data
-                    const stmt = db.prepare(`
-                        INSERT INTO pacd_records (id, date, officer_name, new_member, amendment, yakap_assignment, er2, total_clients, yes_count, no_count, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    `);
-                    
-                    backupData.records.forEach(record => {
-                        stmt.run(
-                            record.id,
-                            record.date,
-                            record.officer_name,
-                            record.new_member,
-                            record.amendment,
-                            record.yakap_assignment,
-                            record.er2,
-                            record.total_clients,
-                            record.yes_count,
-                            record.no_count,
-                            record.created_at || new Date().toISOString()
-                        );
-                    });
-                    
-                    stmt.free();
-                    this.saveDatabase();
-                    this.loadRecords();
-                    this.updateDashboard();
+                if (confirm('This will ADD all backup records to the database. Continue?')) {
+                    for (const record of backupData.records) {
+                        await addDoc(collection(db, 'pacd_records'), {
+                            date:             record.date,
+                            officer_name:     record.officer_name,
+                            new_member:       record.new_member || 0,
+                            amendment:        record.amendment || 0,
+                            yakap_assignment: record.yakap_assignment || 0,
+                            er2:              record.er2 || 0,
+                            total_clients:    record.total_clients || 0,
+                            yes_count:        record.yes_count || 0,
+                            no_count:         record.no_count || 0,
+                            created_at:       record.created_at || new Date().toISOString()
+                        });
+                    }
                     this.showNotification('Data restored successfully!', 'success');
                 }
             } catch (error) {
@@ -785,7 +617,7 @@ class PACDMonitoringSystem {
         };
         
         reader.readAsText(file);
-        e.target.value = ''; // Reset file input
+        e.target.value = '';
     }
 
     updateLastUpdated() {
@@ -866,7 +698,4 @@ class PACDMonitoringSystem {
 }
 
 // Initialize the application when the page loads
-let app;
-document.addEventListener('DOMContentLoaded', () => {
-    app = new PACDMonitoringSystem();
-});
+const app = new PACDMonitoringSystem();
