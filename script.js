@@ -1,5 +1,6 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, limit } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, limit } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updatePassword } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBqr4zFXGfITzuSJhMLG29FMPlUMFcpuek",
@@ -12,7 +13,8 @@ const firebaseConfig = {
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
+const db  = getFirestore(firebaseApp);
+const auth = getAuth(firebaseApp);
 
 let clientsChart = null;
 let satisfactionChart = null;
@@ -20,15 +22,107 @@ let satisfactionChart = null;
 class PACDMonitoringSystem {
     constructor() {
         this.records = [];
+        this.currentUser = null;
+        this._resetTargetUid = null;
         this.init();
     }
 
     async init() {
+        this.setupLoginListeners();
+        this.setupAuthState();
+    }
+
+    // ─────────────────────────────────────────
+    //  AUTH
+    // ─────────────────────────────────────────
+    setupLoginListeners() {
+        document.getElementById('loginForm').addEventListener('submit', (e) => this.handleLogin(e));
+    }
+
+    setupAuthState() {
+        onAuthStateChanged(auth, async (firebaseUser) => {
+            if (firebaseUser) {
+                const userSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
+                if (!userSnap.exists()) {
+                    await signOut(auth);
+                    this.showLoginError('Account not found. Contact administrator.');
+                    return;
+                }
+                const userData = userSnap.data();
+                if (userData.disabled) {
+                    await signOut(auth);
+                    this.showLoginError('Your account has been disabled. Contact administrator.');
+                    return;
+                }
+                // Apply pending password set by admin
+                if (userData.pendingPassword) {
+                    try {
+                        await updatePassword(firebaseUser, userData.pendingPassword);
+                        await updateDoc(doc(db, 'users', firebaseUser.uid), { pendingPassword: null });
+                    } catch (_) {}
+                }
+                this.currentUser = { uid: firebaseUser.uid, email: firebaseUser.email, ...userData };
+                this.showApp();
+            } else {
+                this.showLoginScreen();
+            }
+        });
+    }
+
+    async handleLogin(e) {
+        e.preventDefault();
+        const email    = document.getElementById('loginEmail').value.trim();
+        const password = document.getElementById('loginPassword').value;
+        const btn      = document.getElementById('loginBtn');
+        btn.textContent = 'Signing in...';
+        btn.disabled    = true;
+        document.getElementById('loginError').textContent = '';
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+        } catch (err) {
+            let msg = 'Invalid email or password.';
+            if (err.code === 'auth/too-many-requests') msg = 'Too many attempts. Try again later.';
+            this.showLoginError(msg);
+        } finally {
+            btn.textContent = 'Sign In';
+            btn.disabled    = false;
+        }
+    }
+
+    async logout() {
+        await signOut(auth);
+    }
+
+    showLoginScreen() {
+        document.getElementById('loginScreen').style.display  = 'flex';
+        document.getElementById('appContainer').style.display = 'none';
+        document.getElementById('loginEmail').value    = '';
+        document.getElementById('loginPassword').value = '';
+        document.getElementById('loginError').textContent = '';
+    }
+
+    showApp() {
+        document.getElementById('loginScreen').style.display  = 'none';
+        document.getElementById('appContainer').style.display = 'block';
+        // Show user info in header
+        const headerUser = document.getElementById('headerUser');
+        headerUser.style.display = 'flex';
+        document.getElementById('headerUserName').textContent = this.currentUser.name || this.currentUser.email;
+        const roleBadge = document.getElementById('headerUserRole');
+        roleBadge.textContent = this.currentUser.role === 'admin' ? 'Admin' : 'Officer';
+        roleBadge.className   = `user-role-badge role-${this.currentUser.role}`;
+        document.getElementById('manageUsersBtn').style.display =
+            this.currentUser.role === 'admin' ? 'inline-flex' : 'none';
         this.setupEventListeners();
         this.listenRecords();
+        this.loadOfficerDropdowns();
         this.setDefaultDate();
         this.updateLastUpdated();
         this.startClock();
+    }
+
+    showLoginError(msg) {
+        document.getElementById('loginError').textContent = msg;
     }
 
     setupEventListeners() {
@@ -94,6 +188,227 @@ class PACDMonitoringSystem {
                 this.closeEditModal();
             }
         });
+
+        // Auth
+        document.getElementById('logoutBtn').addEventListener('click', () => this.logout());
+
+        // Admin panel
+        document.getElementById('manageUsersBtn').addEventListener('click', () => this.openAdminPanel());
+        document.getElementById('closeAdminPanel').addEventListener('click', () => this.closeAdminPanel());
+        document.getElementById('adminPanelModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('adminPanelModal')) this.closeAdminPanel();
+        });
+        document.getElementById('createOfficerBtn').addEventListener('click', () => this.createOfficer());
+
+        // Reset password modal
+        document.getElementById('closeResetPasswordModal').addEventListener('click', () => this.closeResetPasswordModal());
+        document.getElementById('closeResetPasswordModal2').addEventListener('click', () => this.closeResetPasswordModal());
+        document.getElementById('confirmResetPassword').addEventListener('click', () => this.confirmResetPassword());
+        document.getElementById('resetPasswordModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('resetPasswordModal')) this.closeResetPasswordModal();
+        });
+    }
+
+    // ─────────────────────────────────────────
+    //  ADMIN PANEL
+    // ─────────────────────────────────────────
+    async openAdminPanel() {
+        document.getElementById('adminPanelModal').classList.add('active');
+        await this.loadOfficers();
+    }
+
+    closeAdminPanel() {
+        document.getElementById('adminPanelModal').classList.remove('active');
+        document.getElementById('newOfficerName').value     = '';
+        document.getElementById('newOfficerEmail').value    = '';
+        document.getElementById('newOfficerPassword').value = '';
+    }
+
+    async loadOfficers() {
+        const listEl = document.getElementById('officersList');
+        listEl.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:16px;">Loading...</p>';
+        try {
+            const snap = await getDocs(query(collection(db, 'users'), orderBy('name')));
+            if (snap.empty) {
+                listEl.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:16px;">No accounts found.</p>';
+                return;
+            }
+            listEl.innerHTML = snap.docs.map(d => {
+                const u = d.data();
+                const isDisabled = u.disabled === true;
+                return `
+                <div class="officer-item">
+                    <div class="officer-info">
+                        <span class="officer-name">${u.name || u.email}</span>
+                        <span class="officer-email">${u.email}</span>
+                        <span class="officer-tag role-${u.role}">${u.role}</span>
+                        ${isDisabled ? '<span class="officer-tag tag-disabled">Disabled</span>' : ''}
+                    </div>
+                    <div class="officer-actions">
+                        <button class="btn btn-sm" onclick="app.openResetPassword('${d.id}','${(u.name||u.email).replace(/'/g,'')}')">
+                            Reset Password
+                        </button>
+                        ${u.role !== 'admin' ? `
+                        <button class="btn btn-sm ${isDisabled ? 'btn-success' : 'btn-danger'}"
+                            onclick="app.toggleOfficerStatus('${d.id}', ${isDisabled})">
+                            ${isDisabled ? 'Enable' : 'Disable'}
+                        </button>
+                        <button class="btn btn-sm btn-delete"
+                            onclick="app.deleteOfficer('${d.id}','${(u.name||u.email).replace(/'/g,'')}')">
+                            Delete
+                        </button>` : ''}
+                    </div>
+                </div>`;
+            }).join('');
+        } catch (err) {
+            console.error('Load officers error:', err);
+            listEl.innerHTML = '<p style="color:var(--error);text-align:center;padding:16px;">Error loading accounts.</p>';
+        }
+    }
+
+    async createOfficer() {
+        const name     = document.getElementById('newOfficerName').value.trim();
+        const email    = document.getElementById('newOfficerEmail').value.trim();
+        const password = document.getElementById('newOfficerPassword').value;
+        const role     = document.getElementById('newOfficerRole').value || 'officer';
+
+        if (!name || !email || !password) {
+            this.showNotification('Please fill in all fields.', 'error'); return;
+        }
+        if (password.length < 6) {
+            this.showNotification('Password must be at least 6 characters.', 'error'); return;
+        }
+
+        const btn = document.getElementById('createOfficerBtn');
+        btn.textContent = 'Creating...';
+        btn.disabled = true;
+
+        try {
+            // Create Firebase Auth user without logging out current admin
+            const secondApp  = initializeApp(firebaseConfig, `sec-${Date.now()}`);
+            const secondAuth = getAuth(secondApp);
+            const { user }   = await createUserWithEmailAndPassword(secondAuth, email, password);
+            await signOut(secondAuth);
+            await deleteApp(secondApp);
+
+            // Store user profile in Firestore
+            await setDoc(doc(db, 'users', user.uid), {
+                name,
+                email,
+                role,
+                disabled:   false,
+                created_at: serverTimestamp()
+            });
+
+            document.getElementById('newOfficerName').value     = '';
+            document.getElementById('newOfficerEmail').value    = '';
+            document.getElementById('newOfficerPassword').value = '';
+            document.getElementById('newOfficerRole').value     = 'officer';
+            this.showNotification(`Account created for ${name}.`, 'success');
+            await this.loadOfficers();
+            await this.loadOfficerDropdowns();
+        } catch (err) {
+            console.error('Create officer error:', err);
+            const msg = err.code === 'auth/email-already-in-use'
+                ? 'This email is already registered.'
+                : 'Error creating account. Please try again.';
+            this.showNotification(msg, 'error');
+        } finally {
+            btn.textContent = 'Create Account';
+            btn.disabled = false;
+        }
+    }
+
+    async loadOfficerDropdowns() {
+        try {
+            const snap = await getDocs(query(collection(db, 'users'), orderBy('name')));
+            const names = snap.docs
+                .map(d => d.data())
+                .filter(u => !u.disabled && u.role === 'officer')
+                .map(u => u.name || u.email);
+
+            ['officerName', 'editOfficerName'].forEach(id => {
+                const sel = document.getElementById(id);
+                if (!sel) return;
+                const current = sel.value;
+                sel.innerHTML = '<option value="">Select Officer...</option>';
+                names.forEach(name => {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    sel.appendChild(opt);
+                });
+                if (current) sel.value = current;
+            });
+
+            // Auto-select and lock the dropdown for officers
+            if (this.currentUser?.role === 'officer') {
+                const sel = document.getElementById('officerName');
+                if (sel) {
+                    sel.value = this.currentUser.name || this.currentUser.email;
+                    sel.style.pointerEvents = 'none';
+                    sel.style.opacity       = '0.7';
+                    sel.style.cursor        = 'not-allowed';
+                }
+            }
+        } catch (e) {
+            console.error('loadOfficerDropdowns error:', e);
+        }
+    }
+
+    async deleteOfficer(uid, name) {
+        if (!confirm(`Delete account for "${name}"? This cannot be undone.`)) return;
+        try {
+            await deleteDoc(doc(db, 'users', uid));
+            this.showNotification(`Account for ${name} deleted.`, 'success');
+            await this.loadOfficers();
+            await this.loadOfficerDropdowns();
+        } catch (err) {
+            console.error('Delete officer error:', err);
+            this.showNotification('Error deleting account.', 'error');
+        }
+    }
+
+    async toggleOfficerStatus(uid, currentlyDisabled) {
+        try {
+            await updateDoc(doc(db, 'users', uid), { disabled: !currentlyDisabled });
+            this.showNotification(
+                currentlyDisabled ? 'Account enabled.' : 'Account disabled.',
+                'success'
+            );
+            await this.loadOfficers();
+        } catch (err) {
+            console.error('Toggle status error:', err);
+            this.showNotification('Error updating account status.', 'error');
+        }
+    }
+
+    openResetPassword(uid, name) {
+        this._resetTargetUid = uid;
+        document.getElementById('resetPasswordFor').textContent = `Set new password for: ${name}`;
+        document.getElementById('newPasswordInput').value = '';
+        document.getElementById('resetPasswordModal').classList.add('active');
+    }
+
+    closeResetPasswordModal() {
+        document.getElementById('resetPasswordModal').classList.remove('active');
+        this._resetTargetUid = null;
+    }
+
+    async confirmResetPassword() {
+        const newPassword = document.getElementById('newPasswordInput').value;
+        if (!newPassword || newPassword.length < 6) {
+            this.showNotification('Password must be at least 6 characters.', 'error'); return;
+        }
+        try {
+            // Store pending password — applied automatically on officer's next login
+            await updateDoc(doc(db, 'users', this._resetTargetUid), { pendingPassword: newPassword });
+            this.closeResetPasswordModal();
+            this.showNotification('Password will be applied on the officer\'s next login.', 'success');
+        } catch (err) {
+            console.error('Reset password error:', err);
+            this.showNotification('Error resetting password.', 'error');
+        }
     }
 
     switchTab(tabName) {
@@ -275,7 +590,17 @@ class PACDMonitoringSystem {
         if (!record) return;
         document.getElementById('editId').value = firestoreId;
         document.getElementById('editDate').value = record.date;
-        document.getElementById('editOfficerName').value = record.officer_name;
+        const editOfficerSel = document.getElementById('editOfficerName');
+        editOfficerSel.value = record.officer_name;
+        if (this.currentUser?.role === 'officer') {
+            editOfficerSel.style.pointerEvents = 'none';
+            editOfficerSel.style.opacity       = '0.7';
+            editOfficerSel.style.cursor        = 'not-allowed';
+        } else {
+            editOfficerSel.style.pointerEvents = '';
+            editOfficerSel.style.opacity       = '';
+            editOfficerSel.style.cursor        = '';
+        }
         document.getElementById('editNewMember').value = record.new_member;
         document.getElementById('editAmendment').value = record.amendment;
         document.getElementById('editYakapAssignment').value = record.yakap_assignment;
@@ -1022,3 +1347,28 @@ class PACDMonitoringSystem {
 // Must be on window so inline onclick handlers can access it from module scope
 const app = new PACDMonitoringSystem();
 window.app = app;
+
+// One-time seed function — call window.seedAccounts() from the browser console
+window.seedAccounts = async () => {
+    const accounts = [
+        { name: 'Admin User',    email: 'admin@memsec.com',   password: 'Admin@123',   role: 'admin'   },
+        { name: 'Test Officer',  email: 'officer@memsec.com', password: 'Officer@123', role: 'officer' }
+    ];
+    for (const acct of accounts) {
+        try {
+            const secApp  = initializeApp(firebaseConfig, `seed-${Date.now()}`);
+            const secAuth = getAuth(secApp);
+            const { user } = await createUserWithEmailAndPassword(secAuth, acct.email, acct.password);
+            await signOut(secAuth);
+            await deleteApp(secApp);
+            await setDoc(doc(db, 'users', user.uid), {
+                name: acct.name, email: acct.email, role: acct.role,
+                disabled: false, created_at: serverTimestamp()
+            });
+            console.log(`Created: ${acct.email}`);
+        } catch (e) {
+            console.warn(`Skipped ${acct.email}:`, e.message);
+        }
+    }
+    console.log('Seeding done. You can now log in.');
+};

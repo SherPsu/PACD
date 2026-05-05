@@ -12,7 +12,30 @@
     <script type="module" src="script.js"></script>
 </head>
 <body>
-    <div class="app-container">
+
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-card">
+            <div class="login-brand">
+                <h1 class="login-title">MEMSEC PACD Monitoring</h1>
+                <p class="login-subtitle">MEMSEC Public Assistance Complaint Desk</p>
+            </div>
+            <form id="loginForm" class="login-form">
+                <div class="form-group">
+                    <label class="form-label" for="loginEmail">Email Address</label>
+                    <input type="email" id="loginEmail" class="form-control" placeholder="Enter your email" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" class="form-control" placeholder="Enter your password" required>
+                </div>
+                <p id="loginError" class="login-error"></p>
+                <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%;">Sign In</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="app-container" id="appContainer" style="display:none;">
         <!-- Modern Header -->
         <header class="app-header">
             <div class="header-content">
@@ -25,8 +48,12 @@
                         <span class="status-dot"></span>
                         System Online
                     </div>
-                    <div class="last-sync" id="lastUpdated">
-                        Last updated: Just now
+                    <div class="last-sync" id="lastUpdated">Last updated: Just now</div>
+                    <div class="header-user" id="headerUser" style="display:none;">
+                        <span class="user-name" id="headerUserName"></span>
+                        <span class="user-role-badge" id="headerUserRole"></span>
+                        <button class="btn btn-sm" id="manageUsersBtn" style="display:none;">Manage Users</button>
+                        <button class="btn btn-sm btn-danger" id="logoutBtn">Sign Out</button>
                     </div>
                 </div>
             </div>
@@ -62,13 +89,6 @@
                                     <label class="form-label" for="officerName">Name of Officer-in-Charge:</label>
                                     <select id="officerName" class="form-control" required>
                                         <option value="">Select Officer...</option>
-                                        <option value="Mark Anthony S. Velasco">Mark Anthony S. Velasco</option>
-                                        <option value="Jhon Kenneth H. Sepro">Jhon Kenneth H. Sepro</option>
-                                        <option value="Jonathan B. Saturnino">Jonathan B. Saturnino</option>
-                                        <option value="Tirso F. Beltran">Tirso F. Beltran</option>
-                                        <option value="Maria Gloethel L. Jimenez">Maria Gloethel L. Jimenez</option>
-                                        <option value="Michelle T. Paningbatan">Michelle T. Paningbatan</option>
-                                        <option value="Jonalyn P. Caranto">Jonalyn P. Caranto</option>
                                     </select>
                                 </div>
                             </div>
@@ -235,13 +255,6 @@
                         <label class="form-label" for="editOfficerName">Officer Name:</label>
                         <select id="editOfficerName" class="form-control" required>
                             <option value="">Select Officer...</option>
-                            <option value="Mark Anthony S. Velasco">Mark Anthony S. Velasco</option>
-                            <option value="Jhon Kenneth H. Sepro">Jhon Kenneth H. Sepro</option>
-                            <option value="Jonathan B. Saturnino">Jonathan B. Saturnino</option>
-                            <option value="Tirso F. Beltran">Tirso F. Beltran</option>
-                            <option value="Maria Gloethel L. Jimenez">Maria Gloethel L. Jimenez</option>
-                            <option value="Michelle T. Paningbatan">Michelle T. Paningbatan</option>
-                            <option value="Jonalyn P. Caranto">Jonalyn P. Caranto</option>
                         </select>
                     </div>
                     <div class="form-grid">
@@ -317,6 +330,73 @@
                 <div class="btn-group" style="margin-top: 16px;">
                     <button class="btn btn-primary" id="confirmExportSummary">Export</button>
                     <button class="btn btn-secondary" id="closeExportModal2">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Panel Modal -->
+    <div id="adminPanelModal" class="modal">
+        <div class="modal-content" style="max-width: 720px;">
+            <div class="modal-header">
+                <h3 class="modal-title">User Management</h3>
+                <button class="modal-close" id="closeAdminPanel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Create Officer -->
+                <div class="admin-section">
+                    <h4 class="admin-section-title">Create Officer Account</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">Full Name</label>
+                            <input type="text" id="newOfficerName" class="form-control" placeholder="e.g. Juan dela Cruz">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Email Address</label>
+                            <input type="email" id="newOfficerEmail" class="form-control" placeholder="officer@memsec.gov">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Password</label>
+                            <input type="password" id="newOfficerPassword" class="form-control" placeholder="Minimum 6 characters">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Role</label>
+                            <select id="newOfficerRole" class="form-control">
+                                <option value="officer">Officer</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="createOfficerBtn">Create Account</button>
+                </div>
+
+                <!-- Officers List -->
+                <div class="admin-section">
+                    <h4 class="admin-section-title">Officer Accounts</h4>
+                    <div id="officersList" class="officers-list">
+                        <p style="color:var(--gray-400);text-align:center;padding:16px;">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reset Password Modal -->
+    <div id="resetPasswordModal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Reset Password</h3>
+                <button class="modal-close" id="closeResetPasswordModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="resetPasswordFor" style="margin-bottom:12px;color:var(--gray-600);font-size:0.9rem;"></p>
+                <div class="form-group">
+                    <label class="form-label">New Password</label>
+                    <input type="password" id="newPasswordInput" class="form-control" placeholder="Minimum 6 characters">
+                </div>
+                <div class="btn-group" style="margin-top:16px;">
+                    <button class="btn btn-primary" id="confirmResetPassword">Set Password</button>
+                    <button class="btn btn-secondary" id="closeResetPasswordModal2">Cancel</button>
                 </div>
             </div>
         </div>

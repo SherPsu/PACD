@@ -1057,6 +1057,237 @@ body {
     white-space: nowrap;
 }
 
+/* ═══════════════════════════════════════
+   LOGIN SCREEN
+═══════════════════════════════════════ */
+.login-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #00875A 0%, #006B48 60%, #004d33 100%);
+    padding: 24px;
+}
+
+.login-card {
+    background: var(--white);
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    padding: 40px;
+    width: 100%;
+    max-width: 420px;
+}
+
+.login-brand {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.login-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin-bottom: 6px;
+}
+
+.login-subtitle {
+    font-size: 0.875rem;
+    color: var(--gray-500);
+}
+
+.login-form .form-group {
+    margin-bottom: 16px;
+}
+
+.login-error {
+    color: #EF4444;
+    font-size: 0.85rem;
+    min-height: 20px;
+    margin-bottom: 12px;
+    text-align: center;
+}
+
+/* ═══════════════════════════════════════
+   HEADER USER INFO
+═══════════════════════════════════════ */
+.header-user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.user-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--gray-800);
+}
+
+.user-role-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 999px;
+}
+
+.role-admin {
+    background: #FEF3C7;
+    color: #D97706;
+}
+
+.role-officer {
+    background: #DBEAFE;
+    color: #2563EB;
+}
+
+.btn-sm {
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    border-radius: var(--radius-md);
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    background: rgba(255,255,255,0.15);
+    color: var(--white);
+    transition: background 0.2s;
+}
+
+.btn-sm:hover { background: rgba(255,255,255,0.25); }
+
+#manageUsersBtn {
+    background: #00875A;
+    color: #fff;
+    border: 1.5px solid rgba(255,255,255,0.5);
+    font-weight: 700;
+}
+#manageUsersBtn:hover { background: #006B48; }
+
+#logoutBtn {
+    background: #dc2626;
+    color: #fff;
+}
+#logoutBtn:hover { background: #b91c1c; }
+
+.btn-danger {
+    background: rgba(239,68,68,0.2) !important;
+    color: #FCA5A5 !important;
+}
+
+.btn-danger:hover { background: rgba(239,68,68,0.35) !important; }
+
+.btn-success {
+    background: rgba(16,185,129,0.2);
+    color: #6EE7B7;
+}
+
+.btn-success:hover { background: rgba(16,185,129,0.35); }
+
+/* ═══════════════════════════════════════
+   ADMIN PANEL
+═══════════════════════════════════════ */
+.admin-section {
+    margin-bottom: 28px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.admin-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.admin-section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--gray-700);
+    margin-bottom: 16px;
+}
+
+.officers-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+.officer-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+    flex-wrap: wrap;
+}
+
+.officer-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.officer-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--gray-800);
+}
+
+.officer-email {
+    font-size: 0.78rem;
+    color: var(--gray-500);
+}
+
+.officer-tag {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+}
+
+.officer-tag.role-admin   { background: #FEF3C7; color: #D97706; }
+.officer-tag.role-officer { background: #DBEAFE; color: #2563EB; }
+.officer-tag.tag-disabled { background: #FEE2E2; color: #DC2626; }
+
+.officer-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.officer-actions .btn-sm {
+    background: var(--gray-200);
+    color: var(--gray-700);
+}
+
+.officer-actions .btn-sm:hover { background: var(--gray-300); }
+
+.officer-actions .btn-danger {
+    background: #FEE2E2 !important;
+    color: #DC2626 !important;
+}
+
+.officer-actions .btn-danger:hover { background: #FECACA !important; }
+
+.officer-actions .btn-success {
+    background: #D1FAE5;
+    color: #059669;
+}
+
+.officer-actions .btn-success:hover { background: #A7F3D0; }
+
+.officer-actions .btn-delete {
+    background: #FEE2E2 !important;
+    color: #DC2626 !important;
+}
+
+.officer-actions .btn-delete:hover { background: #FECACA !important; }
+
 /* Print Styles */
 @media print {
     .app-nav,
