@@ -698,4 +698,6 @@ class PACDMonitoringSystem {
 }
 
 // Initialize the application when the page loads
+// Must be on window so inline onclick handlers can access it from module scope
 const app = new PACDMonitoringSystem();
+window.app = app;
