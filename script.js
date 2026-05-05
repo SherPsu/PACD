@@ -368,7 +368,7 @@ class PACDMonitoringSystem {
                 document.getElementById('editYesCount').value = record.yes_count;
                 document.getElementById('editNoCount').value = record.no_count;
                 
-                document.getElementById('editModal').style.display = 'block';
+                document.getElementById('editModal').classList.add('active');
             }
         } catch (error) {
             console.error('Edit record error:', error);
@@ -396,27 +396,24 @@ class PACDMonitoringSystem {
         }
         
         try {
-            const stmt = db.prepare(`
-                UPDATE pacd_records 
+            db.run(
+                `UPDATE pacd_records 
                 SET date = ?, officer_name = ?, new_member = ?, amendment = ?, yakap_assignment = ?, 
                     er2 = ?, total_clients = ?, yes_count = ?, no_count = ?
-                WHERE id = ?
-            `);
-            
-            stmt.run(
-                document.getElementById('editDate').value,
-                document.getElementById('editOfficerName').value,
-                parseInt(document.getElementById('editNewMember').value) || 0,
-                parseInt(document.getElementById('editAmendment').value) || 0,
-                parseInt(document.getElementById('editYakapAssignment').value) || 0,
-                parseInt(document.getElementById('editEr2').value) || 0,
-                total,
-                parseInt(document.getElementById('editYesCount').value) || 0,
-                parseInt(document.getElementById('editNoCount').value) || 0,
-                id
+                WHERE id = ?`,
+                [
+                    document.getElementById('editDate').value,
+                    document.getElementById('editOfficerName').value,
+                    parseInt(document.getElementById('editNewMember').value) || 0,
+                    parseInt(document.getElementById('editAmendment').value) || 0,
+                    parseInt(document.getElementById('editYakapAssignment').value) || 0,
+                    parseInt(document.getElementById('editEr2').value) || 0,
+                    total,
+                    parseInt(document.getElementById('editYesCount').value) || 0,
+                    parseInt(document.getElementById('editNoCount').value) || 0,
+                    id
+                ]
             );
-            
-            stmt.free();
             this.saveDatabase();
             this.closeEditModal();
             this.loadRecords();
@@ -431,9 +428,7 @@ class PACDMonitoringSystem {
     deleteRecord(id) {
         if (confirm('Are you sure you want to delete this record?')) {
             try {
-                const stmt = db.prepare('DELETE FROM pacd_records WHERE id = ?');
-                stmt.run(id);
-                stmt.free();
+                db.run('DELETE FROM pacd_records WHERE id = ?', [id]);
                 
                 this.saveDatabase();
                 this.loadRecords();
@@ -447,7 +442,7 @@ class PACDMonitoringSystem {
     }
 
     closeEditModal() {
-        document.getElementById('editModal').style.display = 'none';
+        document.getElementById('editModal').classList.remove('active');
     }
 
     filterRecords() {
