@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PACD Monitoring System</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Modern Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="header-brand">
+                    <h1 class="header-title">PACD Monitoring System</h1>
+                    <p class="header-subtitle">Public Assistance Complaint Desk</p>
+                </div>
+                <div class="header-meta">
+                    <div class="status-badge">
+                        <span class="status-dot"></span>
+                        System Online
+                    </div>
+                    <div class="last-sync" id="lastUpdated">
+                        Last updated: Just now
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Modern Navigation -->
+        <nav class="app-nav">
+            <div class="nav-content">
+                <div class="nav-tabs">
+                    <button class="nav-tab active" data-tab="entry">Data Entry</button>
+                    <button class="nav-tab" data-tab="records">Records</button>
+                    <button class="nav-tab" data-tab="dashboard">Dashboard</button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="app-main">
+            <!-- Data Entry Tab -->
+            <div id="entry" class="tab-panel active">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Daily Entry Form</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="dailyEntryForm">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label" for="date">Date:</label>
+                                    <input type="date" id="date" class="form-control" required readonly>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="officerName">Name of Officer-in-Charge:</label>
+                                    <select id="officerName" class="form-control" required>
+                                        <option value="">Select Officer...</option>
+                                        <option value="Mark Anthony S. Velasco">Mark Anthony S. Velasco</option>
+                                        <option value="Jhon Kenneth H. Sepro">Jhon Kenneth H. Sepro</option>
+                                        <option value="Jonathan B. Saturnino">Jonathan B. Saturnino</option>
+                                        <option value="Tirso F. Beltran">Tirso F. Beltran</option>
+                                        <option value="Maria Gloethel L. Jimenez">Maria Gloethel L. Jimenez</option>
+                                        <option value="Michelle T. Paningbatan">Michelle T. Paningbatan</option>
+                                        <option value="Jonalyn P. Caranto">Jonalyn P. Caranto</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-section">
+                                <h3 class="form-section-title">Clients Served</h3>
+                                <div class="form-grid">
+                                    <div class="form-group">
+                                        <label class="form-label" for="newMember">New Member:</label>
+                                        <input type="number" id="newMember" class="form-control" min="0" value="0" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="amendment">Amendment:</label>
+                                        <input type="number" id="amendment" class="form-control" min="0" value="0" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="yakapAssignment">Yakap Assignment:</label>
+                                        <input type="number" id="yakapAssignment" class="form-control" min="0" value="0" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="er2">ER2:</label>
+                                        <input type="number" id="er2" class="form-control" min="0" value="0" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="totalClients">Total Clients Served:</label>
+                                        <input type="number" id="totalClients" class="form-control" readonly>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-section">
+                                <h3 class="form-section-title">Customer Satisfaction Survey</h3>
+                                <div class="form-grid">
+                                    <div class="form-group">
+                                        <label class="form-label" for="yesCount">Yes:</label>
+                                        <input type="number" id="yesCount" class="form-control" min="0" value="0" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="noCount">No:</label>
+                                        <input type="number" id="noCount" class="form-control" min="0" value="0" required>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="btn-group">
+                                <button type="submit" class="btn btn-primary">Save Record</button>
+                                <button type="button" class="btn btn-secondary" id="clearForm">Clear</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Records Tab -->
+            <div id="records" class="tab-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Records Management</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="controls-bar">
+                            <div class="search-group">
+                                <input type="text" id="searchInput" class="search-input" placeholder="Search by date or officer name...">
+                                <input type="date" id="filterDate" class="search-input" placeholder="Filter by date...">
+                            </div>
+                            <div class="btn-group">
+                                <button class="btn btn-secondary" id="exportCSV">Export to Excel</button>
+                                <button class="btn btn-secondary" id="backupData">Backup Data</button>
+                                <button class="btn btn-secondary" id="restoreData">Restore Data</button>
+                            </div>
+                        </div>
+
+                        <div class="table-container">
+                            <table id="recordsTable" class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Date</th>
+                                        <th>Officer Name</th>
+                                        <th>New Member</th>
+                                        <th>Amendment</th>
+                                        <th>Yakap Assignment</th>
+                                        <th>ER2</th>
+                                        <th>Total</th>
+                                        <th>Yes</th>
+                                        <th>No</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recordsTableBody">
+                                    <!-- Records will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Tab -->
+            <div id="dashboard" class="tab-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Dashboard</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-label">Total Records</div>
+                                <div class="stat-value" id="totalRecords">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Total Clients Served</div>
+                                <div class="stat-value" id="totalClientsServed">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Satisfaction Rate</div>
+                                <div class="stat-value" id="satisfactionRate">0%</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Average Daily Clients</div>
+                                <div class="stat-value" id="avgDailyClients">0</div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid">
+                            <div class="chart-card">
+                                <h3 class="chart-title">Clients Served Trend</h3>
+                                <div class="chart-container">
+                                    <canvas id="clientsChart"></canvas>
+                                </div>
+                            </div>
+                            <div class="chart-card">
+                                <h3 class="chart-title">Customer Satisfaction</h3>
+                                <div class="chart-container">
+                                    <canvas id="satisfactionChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modern Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Edit Record</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="editForm">
+                    <input type="hidden" id="editId">
+                    <div class="form-group">
+                        <label class="form-label" for="editDate">Date:</label>
+                        <input type="date" id="editDate" class="form-control" required readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="editOfficerName">Officer Name:</label>
+                        <select id="editOfficerName" class="form-control" required>
+                            <option value="">Select Officer...</option>
+                            <option value="Mark Anthony S. Velasco">Mark Anthony S. Velasco</option>
+                            <option value="Jhon Kenneth H. Sepro">Jhon Kenneth H. Sepro</option>
+                            <option value="Jonathan B. Saturnino">Jonathan B. Saturnino</option>
+                            <option value="Tirso F. Beltran">Tirso F. Beltran</option>
+                            <option value="Maria Gloethel L. Jimenez">Maria Gloethel L. Jimenez</option>
+                            <option value="Michelle T. Paningbatan">Michelle T. Paningbatan</option>
+                            <option value="Jonalyn P. Caranto">Jonalyn P. Caranto</option>
+                        </select>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="editNewMember">New Member:</label>
+                            <input type="number" id="editNewMember" class="form-control" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="editAmendment">Amendment:</label>
+                            <input type="number" id="editAmendment" class="form-control" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="editYakapAssignment">Yakap Assignment:</label>
+                            <input type="number" id="editYakapAssignment" class="form-control" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="editEr2">ER2:</label>
+                            <input type="number" id="editEr2" class="form-control" min="0" required>
+                        </div>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="editYesCount">Yes:</label>
+                            <input type="number" id="editYesCount" class="form-control" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="editNoCount">No:</label>
+                            <input type="number" id="editNoCount" class="form-control" min="0" required>
+                        </div>
+                    </div>
+                    <div class="btn-group">
+                        <button type="submit" class="btn btn-primary">Update Record</button>
+                        <button type="button" class="btn btn-secondary" id="cancelEdit">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input for data restore -->
+    <input type="file" id="fileInput" accept=".json" style="display: none;">
+
+    <script src="script.js"></script>
+</body>
+</html>
