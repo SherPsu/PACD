@@ -1,174 +1,81 @@
-# PACD Monitoring System
+# MEMSEC PACD Monitoring System
 
-A comprehensive Public Assistance Complaint Desk (PACD) monitoring system built as a single-page web application with client-side SQLite database functionality.
+A web-based monitoring system for the **MEMSEC Public Assistance Complaint Desk (PACD)**, built as a single-page application (SPA) with Firebase as the backend.
 
-## 🌟 Features
+## Features
 
 ### Core Functionality
-- **Daily Entry Form**: Record daily activities with date and officer-in-charge information
-- **Clients Served Tracking**: Monitor New Member, Amendment, Yakap Assignment, and ER2 statistics
-- **Customer Satisfaction Survey**: Track Yes/No responses for service quality
-- **Auto-calculation**: Real-time computation of total clients served
+- **Daily Entry Form** — Record daily activities with date and officer-in-charge
+- **Clients Served Tracking** — New Member, Amendment, Yakap Assignment, ER2
+- **Customer Satisfaction Survey** — Yes/No response tracking per day
+- **Auto-calculation** — Total clients computed in real time
 
 ### Data Management
-- **SQLite Database**: Client-side database using sql.js for local data persistence
-- **CRUD Operations**: Complete Create, Read, Update, Delete functionality
-- **Search & Filter**: Find records by date or officer name
-- **Data Export**: Export records to CSV format
-- **Backup & Restore**: JSON-based data backup and restore functionality
+- **Firestore Database** — Cloud-hosted, real-time data sync via Firebase Firestore
+- **CRUD Operations** — Create, Read, Update, Delete records
+- **Search & Filter** — Filter records by date or officer name
+- **Data Export** — Export to Excel (XLSX) and PDF formats
+- **Activity Log** — Audit trail of all record changes (add, edit, delete)
 
 ### Analytics & Visualization
-- **Dashboard**: Real-time statistics and metrics
-- **Interactive Charts**: Client trends and satisfaction data using Chart.js
-- **Responsive Design**: Works seamlessly on desktop and mobile devices
+- **Dashboard** — Real-time statistics: totals, averages, satisfaction rate
+- **Interactive Charts** — Weekly trends and satisfaction breakdown via Chart.js
+- **Responsive Design** — Works on desktop, tablet, and mobile
 
-## 🚀 Quick Start
+### Authentication & User Management
+- **Firebase Authentication** — Email/password login
+- **Role-based Access** — Two roles: `admin` and `officer`
+- **Admin Panel** — Admins can create, disable, reset passwords, and delete officer accounts
+- **Officer Dropdown** — Auto-populated from Firestore; officers are pre-assigned their own name
 
-1. **Open the Application**
-   - Open `index.html` in your web browser
-   - No installation or server setup required
+## Technical Stack
 
-2. **Add Your First Record**
-   - Navigate to the "Data Entry" tab
-   - Fill in the date and officer name
-   - Enter client service numbers
-   - Add satisfaction survey responses
-   - Click "Save Record"
+| Layer | Technology |
+|---|---|
+| Frontend | HTML5, CSS3, Vanilla JavaScript (ES Modules) |
+| Backend / DB | Firebase Firestore |
+| Auth | Firebase Authentication |
+| Charts | Chart.js |
+| Export | SheetJS (xlsx), html2canvas, jsPDF |
 
-3. **View and Manage Records**
-   - Switch to the "Records" tab to view all entries
-   - Use search and filter functions to find specific records
-   - Edit or delete records as needed
+## Firestore Collections
 
-4. **Analyze Data**
-   - Visit the "Dashboard" tab for insights and visualizations
-   - View trends in client service and satisfaction
+| Collection | Purpose |
+|---|---|
+| `pacd_records` | Daily monitoring records |
+| `users` | User profiles (name, email, role, disabled) |
+| `pacd_activity_log` | Audit log of record changes |
 
-## 📋 System Requirements
+## User Roles
 
-- **Modern Web Browser**: Chrome, Firefox, Safari, or Edge
-- **JavaScript Enabled**: Required for SQLite and chart functionality
-- **Local Storage**: Browser must support localStorage for data persistence
+| Role | Capabilities |
+|---|---|
+| `admin` | Full access — view all records, manage users, export data |
+| `officer` | Data entry only — pre-assigned to their own name, cannot manage users |
 
-## 🛠️ Technical Stack
+## Quick Start
 
-- **Frontend**: HTML5, CSS3, Vanilla JavaScript
-- **Database**: SQLite via sql.js (WebAssembly)
-- **Charts**: Chart.js for data visualization
-- **Storage**: Browser localStorage for database persistence
-- **Architecture**: Single-page application (SPA)
+1. Open the app in a browser
+2. Log in with your assigned email and password
+3. Officers — fill in the Daily Entry form and click **Save Record**
+4. Admins — use **Manage Users** to create or manage officer accounts
 
-## 📊 Database Schema
+## Browser Compatibility
 
-```sql
-CREATE TABLE pacd_records (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT NOT NULL,
-    officer_name TEXT NOT NULL,
-    new_member INTEGER NOT NULL DEFAULT 0,
-    amendment INTEGER NOT NULL DEFAULT 0,
-    yakap_assignment INTEGER NOT NULL DEFAULT 0,
-    er2 INTEGER NOT NULL DEFAULT 0,
-    total_clients INTEGER NOT NULL DEFAULT 0,
-    yes_count INTEGER NOT NULL DEFAULT 0,
-    no_count INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
+| Browser | Status |
+|---|---|
+| Chrome 80+ | Full Support |
+| Firefox 75+ | Full Support |
+| Safari 13+ | Full Support |
+| Edge 80+ | Full Support |
 
-## 🔧 Usage Guide
+## Troubleshooting
 
-### Data Entry
-1. **Date**: Select the date of the record
-2. **Officer Name**: Enter the name of the officer-in-charge
-3. **Clients Served**: Input numbers for each service type
-   - Total is automatically calculated
-4. **Satisfaction Survey**: Enter Yes/No response counts
-5. **Save**: Click "Save Record" to store the data
-
-### Records Management
-- **Search**: Type in the search box to filter by date or officer name
-- **Date Filter**: Use the date picker to filter by specific date
-- **Edit**: Click the "Edit" button to modify existing records
-- **Delete**: Click "Delete" to remove records (with confirmation)
-
-### Data Export
-- **CSV Export**: Download all records as a CSV file
-- **Backup**: Create a JSON backup of all data
-- **Restore**: Upload a previously created backup file
-
-### Dashboard Analytics
-- **Total Records**: Number of entries in the database
-- **Total Clients Served**: Sum of all clients across all records
-- **Satisfaction Rate**: Percentage of positive responses
-- **Average Daily Clients**: Mean number of clients per day
-
-## 🌐 Browser Compatibility
-
-| Browser | Version | Status |
-|---------|---------|--------|
-| Chrome | 80+ | ✅ Full Support |
-| Firefox | 75+ | ✅ Full Support |
-| Safari | 13+ | ✅ Full Support |
-| Edge | 80+ | ✅ Full Support |
-
-## 🔒 Data Privacy
-
-- **Local Storage**: All data is stored locally in your browser
-- **No Server Communication**: No data is sent to external servers
-- **Offline Functionality**: Works completely offline
-- **Data Control**: You have full control over your data with export/backup options
-
-## 📱 Mobile Responsiveness
-
-The application is fully responsive and works on:
-- **Desktop**: Full functionality with optimized layout
-- **Tablet**: Touch-friendly interface with adapted layouts
-- **Mobile**: Compact design with swipe-friendly navigation
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-1. **Database Not Loading**
-   - Refresh the page
-   - Check browser console for errors
-   - Ensure JavaScript is enabled
-
-2. **Charts Not Displaying**
-   - Check internet connection (Chart.js loads from CDN)
-   - Verify browser supports Canvas API
-
-3. **Data Not Persisting**
-   - Check browser localStorage settings
-   - Ensure private/incognito mode is not enabled
-   - Clear browser cache and reload
-
-4. **Export Not Working**
-   - Check browser download permissions
-   - Ensure pop-up blockers are not interfering
-
-### Performance Tips
-
-- **Large Datasets**: For >1000 records, consider using date filters
-- **Mobile Performance**: Use Wi-Fi for initial load (CDN resources)
-- **Browser Memory**: Periodically export and clear old records if needed
-
-## 📝 License
-
-This project is open-source and available under the MIT License.
-
-## 🤝 Contributing
-
-Feel free to submit issues, feature requests, or pull requests to improve the system.
-
-## 📞 Support
-
-For technical support or questions:
-1. Check the troubleshooting section above
-2. Review browser console for error messages
-3. Ensure all requirements are met
+- **Login fails** — Check email/password; account may be disabled
+- **Dropdown empty** — No active officer accounts in Firestore yet; create one via Manage Users
+- **Charts not showing** — Check internet connection (Chart.js loads from CDN)
+- **Export not working** — Check browser download permissions
 
 ---
 
-**PACD Monitoring System** - Efficient, reliable, and user-friendly complaint desk management.
+**MEMSEC PACD Monitoring System** — Efficient, cloud-backed complaint desk management.
