@@ -16,6 +16,7 @@ A web-based monitoring system for the **MEMSEC Public Assistance Complaint Desk 
 - **Search & Filter** — Filter records by date or officer name
 - **Data Export** — Export to Excel (XLSX) and PDF formats
 - **Activity Log** — Audit trail of all record changes (add, edit, delete)
+- **Recently Deleted** — Soft-delete with 30-day recovery window; restore accidentally deleted records
 
 ### Analytics & Visualization
 - **Dashboard** — Real-time statistics: totals, averages, satisfaction rate

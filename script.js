@@ -78,7 +78,18 @@ class PACDMonitoringSystem {
         btn.disabled    = true;
         document.getElementById('loginError').textContent = '';
         try {
-            await signInWithEmailAndPassword(auth, email, password);
+            const userCred = await signInWithEmailAndPassword(auth, email, password);
+            const userSnap = await getDoc(doc(db, 'users', userCred.user.uid));
+            if (userSnap.exists() && !userSnap.data().disabled) {
+                // Log the login event
+                await addDoc(collection(db, 'pacd_login_history'), {
+                    uid: userCred.user.uid,
+                    email: email,
+                    name: userSnap.data().name || 'Unknown',
+                    role: userSnap.data().role || 'officer',
+                    timestamp: serverTimestamp()
+                });
+            }
         } catch (err) {
             let msg = 'Invalid email or password.';
             if (err.code === 'auth/too-many-requests') msg = 'Too many attempts. Try again later.';
@@ -139,9 +150,14 @@ class PACDMonitoringSystem {
         document.getElementById('clearForm').addEventListener('click', () => this.clearForm());
         document.getElementById('cancelEdit').addEventListener('click', () => this.closeEditModal());
 
-        // Auto-calculation
-        ['newMember', 'amendment', 'yakapAssignment', 'er2'].forEach(id => {
+        // Auto-calculation for daily entry form
+        ['newMember', 'amendment', 'yakapAssignment', 'er2', 'inquiry', 'printIdMdr'].forEach(id => {
             document.getElementById(id).addEventListener('input', () => this.calculateTotal());
+        });
+
+        // Auto-calculation for edit modal
+        ['editNewMember', 'editAmendment', 'editYakapAssignment', 'editEr2', 'editInquiry', 'editPrintIdMdr'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => this.calculateEditTotal());
         });
 
         // Satisfaction survey validation
@@ -157,6 +173,7 @@ class PACDMonitoringSystem {
         document.getElementById('exportCSV').addEventListener('click', () => this.exportToExcel());
         document.getElementById('exportWeeklySummary').addEventListener('click', () => this.openExportModal('week'));
         document.getElementById('exportMonthlySummary').addEventListener('click', () => this.openExportModal('month'));
+        document.getElementById('exportCustomRange').addEventListener('click', () => this.openExportModal('custom'));
         document.getElementById('backupData').addEventListener('click', () => this.backupData());
         document.getElementById('restoreData').addEventListener('click', () => this.restoreData());
 
@@ -168,6 +185,13 @@ class PACDMonitoringSystem {
         document.getElementById('closeHistoryModal').addEventListener('click', () => this.closeHistoryModal());
         document.getElementById('historyModal').addEventListener('click', (e) => {
             if (e.target === document.getElementById('historyModal')) this.closeHistoryModal();
+        });
+
+        // Recently Deleted modal
+        document.getElementById('viewRecentlyDeleted').addEventListener('click', () => this.openRecentlyDeletedModal());
+        document.getElementById('closeRecentlyDeletedModal').addEventListener('click', () => this.closeRecentlyDeletedModal());
+        document.getElementById('recentlyDeletedModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('recentlyDeletedModal')) this.closeRecentlyDeletedModal();
         });
 
         // Export summary modal
@@ -209,12 +233,55 @@ class PACDMonitoringSystem {
         });
     }
 
+    confirmAction(title, message, onConfirm, confirmText = 'Confirm', confirmStyle = '') {
+        const modal = document.getElementById('confirmActionModal');
+        if (!modal) return;
+        
+        document.getElementById('confirmActionTitle').textContent = title;
+        document.getElementById('confirmActionMessage').textContent = message;
+        
+        const actionBtn = document.getElementById('confirmActionBtn');
+        actionBtn.textContent = confirmText;
+        if (confirmStyle) {
+            actionBtn.style.background = confirmStyle === 'danger' ? '#EF4444' : '#10B981';
+            actionBtn.style.color = '#fff';
+            actionBtn.style.border = 'none';
+        } else {
+            actionBtn.style = '';
+            actionBtn.className = 'btn btn-primary';
+        }
+        
+        modal.classList.add('active');
+        
+        // Clean up listeners by cloning
+        const newActionBtn = actionBtn.cloneNode(true);
+        actionBtn.parentNode.replaceChild(newActionBtn, actionBtn);
+        
+        const cancelBtn = document.getElementById('confirmCancelBtn');
+        const newCancelBtn = cancelBtn.cloneNode(true);
+        cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+        
+        const closeBtn = document.getElementById('closeConfirmModal');
+        if (closeBtn) {
+            const newCloseBtn = closeBtn.cloneNode(true);
+            closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+            newCloseBtn.addEventListener('click', () => modal.classList.remove('active'));
+        }
+        
+        newCancelBtn.addEventListener('click', () => modal.classList.remove('active'));
+        newActionBtn.addEventListener('click', () => {
+            modal.classList.remove('active');
+            if (onConfirm) onConfirm();
+        });
+    }
+
     // ─────────────────────────────────────────
     //  ADMIN PANEL
     // ─────────────────────────────────────────
     async openAdminPanel() {
         document.getElementById('adminPanelModal').classList.add('active');
         await this.loadOfficers();
+        await this.loadLoginHistory();
     }
 
     closeAdminPanel() {
@@ -245,7 +312,7 @@ class PACDMonitoringSystem {
                         ${isDisabled ? '<span class="officer-tag tag-disabled">Disabled</span>' : ''}
                     </div>
                     <div class="officer-actions">
-                        <button class="btn btn-sm" onclick="app.openResetPassword('${d.id}','${(u.name||u.email).replace(/'/g,'')}')">
+                        <button class="btn btn-sm" onclick="app.openResetPassword('${d.id}',&quot;${(u.name||u.email).replace(/"/g,'&quot;')}&quot;,&quot;${u.email.replace(/"/g,'&quot;')}&quot;)">
                             Reset Password
                         </button>
                         ${u.role !== 'admin' ? `
@@ -263,6 +330,44 @@ class PACDMonitoringSystem {
         } catch (err) {
             console.error('Load officers error:', err);
             listEl.innerHTML = '<p style="color:var(--error);text-align:center;padding:16px;">Error loading accounts.</p>';
+        }
+    }
+
+    async loadLoginHistory() {
+        const listEl = document.getElementById('loginHistoryList');
+        if (!listEl) return;
+        listEl.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:16px;">Loading history...</p>';
+        try {
+            const snap = await getDocs(query(collection(db, 'pacd_login_history'), orderBy('timestamp', 'desc'), limit(50)));
+            if (snap.empty) {
+                listEl.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:16px;">No login history found.</p>';
+                return;
+            }
+            
+            listEl.innerHTML = snap.docs.map(d => {
+                const data = d.data();
+                let time = 'Just now';
+                if (data.timestamp) {
+                    const dateObj = data.timestamp.toDate();
+                    const dateOpts = { year: 'numeric', month: 'short', day: 'numeric' };
+                    const timeOpts = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
+                    time = `${dateObj.toLocaleDateString('en-US', dateOpts)} at ${dateObj.toLocaleTimeString('en-US', timeOpts)}`;
+                }
+                return `
+                <div class="officer-item" style="flex-direction:column;align-items:flex-start;gap:4px;">
+                    <div style="display:flex;justify-content:space-between;width:100%;">
+                        <strong>${data.name}</strong>
+                        <span style="color:var(--gray-500);font-size:0.85rem;">${time}</span>
+                    </div>
+                    <div style="color:var(--gray-500);font-size:0.85rem;">
+                        ${data.email} &bull; <span style="text-transform:capitalize;">${data.role}</span>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        } catch (e) {
+            console.error('loadLoginHistory error:', e);
+            listEl.innerHTML = '<p style="color:var(--error);text-align:center;padding:16px;">Error loading login history.</p>';
         }
     }
 
@@ -357,16 +462,23 @@ class PACDMonitoringSystem {
     }
 
     async deleteOfficer(uid, name) {
-        if (!confirm(`Delete account for "${name}"? This cannot be undone.`)) return;
-        try {
-            await deleteDoc(doc(db, 'users', uid));
-            this.showNotification(`Account for ${name} deleted.`, 'success');
-            await this.loadOfficers();
-            await this.loadOfficerDropdowns();
-        } catch (err) {
-            console.error('Delete officer error:', err);
-            this.showNotification('Error deleting account.', 'error');
-        }
+        this.confirmAction(
+            'Delete Account',
+            `Delete account for "${name}"? This cannot be undone.`,
+            async () => {
+                try {
+                    await deleteDoc(doc(db, 'users', uid));
+                    this.showNotification(`Account for ${name} deleted.`, 'success');
+                    await this.loadOfficers();
+                    await this.loadOfficerDropdowns();
+                } catch (err) {
+                    console.error('Delete officer error:', err);
+                    this.showNotification('Error deleting account.', 'error');
+                }
+            },
+            'Delete',
+            'danger'
+        );
     }
 
     async toggleOfficerStatus(uid, currentlyDisabled) {
@@ -383,31 +495,32 @@ class PACDMonitoringSystem {
         }
     }
 
-    openResetPassword(uid, name) {
+    openResetPassword(uid, name, email) {
         this._resetTargetUid = uid;
-        document.getElementById('resetPasswordFor').textContent = `Set new password for: ${name}`;
-        document.getElementById('newPasswordInput').value = '';
+        this._resetTargetEmail = email;
+        document.getElementById('resetPasswordFor').textContent = `Send password reset email to: ${name} (${email})`;
         document.getElementById('resetPasswordModal').classList.add('active');
     }
 
     closeResetPasswordModal() {
         document.getElementById('resetPasswordModal').classList.remove('active');
         this._resetTargetUid = null;
+        this._resetTargetEmail = null;
     }
 
     async confirmResetPassword() {
-        const newPassword = document.getElementById('newPasswordInput').value;
-        if (!newPassword || newPassword.length < 6) {
-            this.showNotification('Password must be at least 6 characters.', 'error'); return;
+        if (!this._resetTargetEmail) {
+            this.showNotification('No email address found for this user.', 'error');
+            return;
         }
         try {
-            // Store pending password — applied automatically on officer's next login
-            await updateDoc(doc(db, 'users', this._resetTargetUid), { pendingPassword: newPassword });
+            const { sendPasswordResetEmail } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js');
+            await sendPasswordResetEmail(auth, this._resetTargetEmail);
             this.closeResetPasswordModal();
-            this.showNotification('Password will be applied on the officer\'s next login.', 'success');
+            this.showNotification(`Password reset email sent to ${this._resetTargetEmail}`, 'success');
         } catch (err) {
-            console.error('Reset password error:', err);
-            this.showNotification('Error resetting password.', 'error');
+            console.error('Send reset email error:', err);
+            this.showNotification('Error sending password reset email.', 'error');
         }
     }
 
@@ -431,12 +544,26 @@ class PACDMonitoringSystem {
         const amendment = parseInt(document.getElementById('amendment').value) || 0;
         const yakapAssignment = parseInt(document.getElementById('yakapAssignment').value) || 0;
         const er2 = parseInt(document.getElementById('er2').value) || 0;
-        
-        const total = newMember + amendment + yakapAssignment + er2;
-        document.getElementById('totalClients').value = total;
-        
+        const inquiry = parseInt(document.getElementById('inquiry').value) || 0;
+        const printIdMdr = parseInt(document.getElementById('printIdMdr').value) || 0;
+
+        const totalTransactions = newMember + amendment + yakapAssignment + er2 + inquiry + printIdMdr;
+        document.getElementById('totalTransactions').value = totalTransactions;
+
         // Validate satisfaction survey when total changes
         this.validateSatisfactionSurvey();
+    }
+
+    calculateEditTotal() {
+        const newMember = parseInt(document.getElementById('editNewMember').value) || 0;
+        const amendment = parseInt(document.getElementById('editAmendment').value) || 0;
+        const yakapAssignment = parseInt(document.getElementById('editYakapAssignment').value) || 0;
+        const er2 = parseInt(document.getElementById('editEr2').value) || 0;
+        const inquiry = parseInt(document.getElementById('editInquiry').value) || 0;
+        const printIdMdr = parseInt(document.getElementById('editPrintIdMdr').value) || 0;
+
+        const totalTransactions = newMember + amendment + yakapAssignment + er2 + inquiry + printIdMdr;
+        document.getElementById('editTotalTransactions').value = totalTransactions;
     }
 
     validateSatisfactionSurvey() {
@@ -497,6 +624,9 @@ class PACDMonitoringSystem {
             amendment: parseInt(document.getElementById('amendment').value) || 0,
             yakap_assignment: parseInt(document.getElementById('yakapAssignment').value) || 0,
             er2: parseInt(document.getElementById('er2').value) || 0,
+            inquiry: parseInt(document.getElementById('inquiry').value) || 0,
+            print_id_mdr: parseInt(document.getElementById('printIdMdr').value) || 0,
+            total_transactions: parseInt(document.getElementById('totalTransactions').value) || 0,
             total_clients: parseInt(document.getElementById('totalClients').value) || 0,
             yes_count: parseInt(document.getElementById('yesCount').value) || 0,
             no_count: parseInt(document.getElementById('noCount').value) || 0,
@@ -559,11 +689,13 @@ class PACDMonitoringSystem {
         const tbody = document.getElementById('recordsTableBody');
         
         if (records.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="11" class="empty-state">No records found. Start by adding a new record!</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" class="empty-state">No records found. Start by adding a new record!</td></tr>';
             return;
         }
 
-        tbody.innerHTML = records.map(record => `
+        tbody.innerHTML = records.map(record => {
+            const others = (record.inquiry || 0) + (record.print_id_mdr || 0);
+            return `
             <tr>
                 <td>${record.id}</td>
                 <td>${record.date}</td>
@@ -572,6 +704,8 @@ class PACDMonitoringSystem {
                 <td>${record.amendment}</td>
                 <td>${record.yakap_assignment}</td>
                 <td>${record.er2}</td>
+                <td>${others}</td>
+                <td>${record.total_transactions || 0}</td>
                 <td><strong>${record.total_clients}</strong></td>
                 <td>${record.yes_count}</td>
                 <td>${record.no_count}</td>
@@ -582,7 +716,8 @@ class PACDMonitoringSystem {
                     </div>
                 </td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
     }
 
     editRecord(firestoreId) {
@@ -605,6 +740,10 @@ class PACDMonitoringSystem {
         document.getElementById('editAmendment').value = record.amendment;
         document.getElementById('editYakapAssignment').value = record.yakap_assignment;
         document.getElementById('editEr2').value = record.er2;
+        document.getElementById('editInquiry').value = record.inquiry || 0;
+        document.getElementById('editPrintIdMdr').value = record.print_id_mdr || 0;
+        document.getElementById('editTotalTransactions').value = record.total_transactions || 0;
+        document.getElementById('editTotalClients').value = record.total_clients;
         document.getElementById('editYesCount').value = record.yes_count;
         document.getElementById('editNoCount').value = record.no_count;
         document.getElementById('editModal').classList.add('active');
@@ -612,21 +751,24 @@ class PACDMonitoringSystem {
 
     async handleEditSubmit(e) {
         e.preventDefault();
-        
+
         const firestoreId = document.getElementById('editId').value;
-        const total = (parseInt(document.getElementById('editNewMember').value) || 0) +
+        const totalTransactions = (parseInt(document.getElementById('editNewMember').value) || 0) +
                      (parseInt(document.getElementById('editAmendment').value) || 0) +
                      (parseInt(document.getElementById('editYakapAssignment').value) || 0) +
-                     (parseInt(document.getElementById('editEr2').value) || 0);
-        
+                     (parseInt(document.getElementById('editEr2').value) || 0) +
+                     (parseInt(document.getElementById('editInquiry').value) || 0) +
+                     (parseInt(document.getElementById('editPrintIdMdr').value) || 0);
+
+        const totalClients = parseInt(document.getElementById('editTotalClients').value) || 0;
         const yesCount = parseInt(document.getElementById('editYesCount').value) || 0;
         const noCount  = parseInt(document.getElementById('editNoCount').value) || 0;
-        
-        if ((yesCount + noCount) > total && total > 0) {
-            this.showNotification(`Survey responses cannot exceed total clients served (${total})`, 'error');
+
+        if ((yesCount + noCount) > totalClients && totalClients > 0) {
+            this.showNotification(`Survey responses cannot exceed total clients served (${totalClients})`, 'error');
             return;
         }
-        
+
         const editedDate = document.getElementById('editDate').value;
         const editedOfficer = document.getElementById('editOfficerName').value;
         try {
@@ -637,7 +779,10 @@ class PACDMonitoringSystem {
                 amendment:        parseInt(document.getElementById('editAmendment').value) || 0,
                 yakap_assignment: parseInt(document.getElementById('editYakapAssignment').value) || 0,
                 er2:              parseInt(document.getElementById('editEr2').value) || 0,
-                total_clients:    total,
+                inquiry:          parseInt(document.getElementById('editInquiry').value) || 0,
+                print_id_mdr:     parseInt(document.getElementById('editPrintIdMdr').value) || 0,
+                total_transactions: totalTransactions,
+                total_clients:    totalClients,
                 yes_count:        yesCount,
                 no_count:         noCount
             });
@@ -651,17 +796,150 @@ class PACDMonitoringSystem {
     }
 
     async deleteRecord(firestoreId) {
-        if (confirm('Are you sure you want to delete this record?')) {
-            try {
-                const record = this.records.find(r => r.id === firestoreId);
-                await deleteDoc(doc(db, 'pacd_records', firestoreId));
-                await this.logActivity('deleted', firestoreId, record?.officer_name || 'Unknown', record?.date || '');
-                this.showNotification('Record deleted successfully!', 'success');
-            } catch (error) {
-                console.error('Delete record error:', error);
-                this.showNotification('Error deleting record. Please try again.', 'error');
+        this.confirmAction(
+            'Delete Record',
+            'Are you sure you want to delete this record? It will be moved to Recently Deleted and can be restored within 30 days.',
+            async () => {
+                try {
+                    const record = this.records.find(r => r.id === firestoreId);
+                    if (!record) {
+                        this.showNotification('Record not found.', 'error');
+                        return;
+                    }
+                    // Move to deleted collection with timestamp
+                    const { id, ...recordData } = record;
+                    const deletedRecord = {
+                        ...recordData,
+                        original_id: firestoreId,
+                        deleted_at: new Date().toISOString(),
+                        deleted_by: this.currentUser?.email || 'Unknown',
+                        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days from now
+                    };
+                    await addDoc(collection(db, 'pacd_deleted_records'), deletedRecord);
+                    // Delete from main collection
+                    await deleteDoc(doc(db, 'pacd_records', firestoreId));
+                    await this.logActivity('deleted', firestoreId, record?.officer_name || 'Unknown', record?.date || '');
+                    this.showNotification('Record moved to Recently Deleted. You can restore it within 30 days.', 'success');
+                } catch (error) {
+                    console.error('Delete record error:', error);
+                    this.showNotification('Error deleting record. Please try again.', 'error');
+                }
+            },
+            'Delete',
+            'danger'
+        );
+    }
+
+    async openRecentlyDeletedModal() {
+        document.getElementById('recentlyDeletedModal').classList.add('active');
+        await this.loadRecentlyDeleted();
+    }
+
+    closeRecentlyDeletedModal() {
+        document.getElementById('recentlyDeletedModal').classList.remove('active');
+    }
+
+    async loadRecentlyDeleted() {
+        const listEl = document.getElementById('recentlyDeletedList');
+        listEl.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:24px 0;">Loading...</p>';
+        try {
+            const snap = await getDocs(query(collection(db, 'pacd_deleted_records'), orderBy('deleted_at', 'desc')));
+            if (snap.empty) {
+                listEl.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:24px 0;">No recently deleted records.</p>';
+                return;
             }
+            const now = new Date();
+            listEl.innerHTML = snap.docs.map(d => {
+                const r = d.data();
+                const deletedDate = new Date(r.deleted_at);
+                const daysLeft = Math.ceil((new Date(r.expires_at) - now) / (1000 * 60 * 60 * 24));
+                return `
+                <div class="officer-item" style="flex-direction:column;align-items:flex-start;gap:8px;">
+                    <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+                        <div>
+                            <strong>${r.date}</strong> - ${r.officer_name || 'Unknown'}<br>
+                            <small style="color:var(--gray-500);">
+                                Trans: ${r.total_transactions || 0} | Clients: ${r.total_clients || 0} | 
+                                Deleted: ${deletedDate.toLocaleString()} by ${r.deleted_by}
+                            </small><br>
+                            <small style="color:${daysLeft <= 3 ? 'var(--error)' : 'var(--warning)'};font-weight:600;">
+                                ⏳ Expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}
+                            </small>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-sm btn-success" onclick="app.restoreRecord('${d.id}')">
+                                Restore
+                            </button>
+                            <button class="btn btn-sm" style="background:#EF4444;color:white;border:none;" onclick="app.permanentlyDeleteRecord('${d.id}')">
+                                Permanent Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        } catch (e) {
+            console.error('Load recently deleted error:', e);
+            listEl.innerHTML = '<p style="color:var(--error);text-align:center;padding:24px 0;">Error loading recently deleted records.</p>';
         }
+    }
+
+    async restoreRecord(deletedDocId) {
+        this.confirmAction(
+            'Restore Record',
+            'Are you sure you want to restore this record?',
+            async () => {
+                try {
+                    const deletedDoc = await getDoc(doc(db, 'pacd_deleted_records', deletedDocId));
+                    if (!deletedDoc.exists()) {
+                        this.showNotification('Record not found in recently deleted.', 'error');
+                        return;
+                    }
+                    const data = deletedDoc.data();
+                    // Remove system fields before restoring
+                    const { original_id, deleted_at, deleted_by, expires_at, id, ...restoredData } = data;
+                    
+                    if (original_id) {
+                        // Restore to main collection with original ID
+                        await setDoc(doc(db, 'pacd_records', original_id), restoredData);
+                    } else {
+                        // Fallback for older deleted records
+                        await addDoc(collection(db, 'pacd_records'), restoredData);
+                    }
+                    
+                    // Delete from deleted collection
+                    await deleteDoc(doc(db, 'pacd_deleted_records', deletedDocId));
+                    
+                    await this.logActivity('restored', original_id || 'unknown', restoredData.officer_name || 'Unknown', restoredData.date || '');
+                    this.showNotification('Record restored successfully!', 'success');
+                    await this.loadRecentlyDeleted();
+                } catch (e) {
+                    console.error('Restore record error:', e);
+                    this.showNotification('Error restoring record.', 'error');
+                }
+            },
+            'Restore',
+            'success'
+        );
+    }
+
+    async permanentlyDeleteRecord(deletedDocId) {
+        this.confirmAction(
+            'Permanent Delete',
+            'Are you sure you want to permanently delete this record? This action cannot be undone.',
+            async () => {
+                try {
+                    await deleteDoc(doc(db, 'pacd_deleted_records', deletedDocId));
+                    this.showNotification('Record permanently deleted.', 'success');
+                    await this.loadRecentlyDeleted();
+                } catch (error) {
+                    console.error('Permanent delete error:', error);
+                    this.showNotification('Error permanently deleting record.', 'error');
+                }
+            },
+            'Delete',
+            'danger'
+        );
     }
 
     async logActivity(action, recordId, officerName, date) {
@@ -913,7 +1191,10 @@ class PACDMonitoringSystem {
                 'Amendment':          r.amendment,
                 'Yakap Assignment':   r.yakap_assignment,
                 'ER2':                r.er2,
-                'Total Clients':      r.total_clients,
+                'Inquiry':            r.inquiry || 0,
+                'Print ID/MDR':       r.print_id_mdr || 0,
+                'Transactions':       r.total_transactions || 0,
+                'Clients':            r.total_clients,
                 'Answered Survey':    r.yes_count,
                 'Did Not Answer':     r.no_count
             }));
@@ -929,7 +1210,10 @@ class PACDMonitoringSystem {
                 { wch: 12 },   // Amendment
                 { wch: 18 },   // Yakap Assignment
                 { wch: 8  },   // ER2
-                { wch: 14 },   // Total Clients
+                { wch: 10 },   // Inquiry
+                { wch: 12 },   // Print ID/MDR
+                { wch: 12 },   // Transactions
+                { wch: 10 },   // Clients
                 { wch: 10 },   // Yes Count
                 { wch: 10 }    // No Count
             ];
@@ -1045,17 +1329,27 @@ class PACDMonitoringSystem {
             document.getElementById('exportSummaryTitle').textContent = 'Export Weekly Summary';
             document.getElementById('weekPickerGroup').style.display = 'block';
             document.getElementById('monthPickerGroup').style.display = 'none';
+            document.getElementById('customRangeGroup').style.display = 'none';
             // Default to current week (YYYY-Www format)
             const year = now.getFullYear();
             const startOfYear = new Date(year, 0, 1);
             const weekNum = Math.ceil(((now - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
             document.getElementById('weekPicker').value = `${year}-W${String(weekNum).padStart(2, '0')}`;
-        } else {
+        } else if (type === 'month') {
             document.getElementById('exportSummaryTitle').textContent = 'Export Monthly Summary';
             document.getElementById('monthPickerGroup').style.display = 'block';
             document.getElementById('weekPickerGroup').style.display = 'none';
+            document.getElementById('customRangeGroup').style.display = 'none';
             const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
             document.getElementById('monthPicker').value = ym;
+        } else if (type === 'custom') {
+            document.getElementById('exportSummaryTitle').textContent = 'Export Custom Range';
+            document.getElementById('customRangeGroup').style.display = 'block';
+            document.getElementById('weekPickerGroup').style.display = 'none';
+            document.getElementById('monthPickerGroup').style.display = 'none';
+            const today = now.toISOString().split('T')[0];
+            document.getElementById('customFromDate').value = today;
+            document.getElementById('customToDate').value = today;
         }
 
         document.getElementById('exportSummaryModal').classList.add('active');
@@ -1077,22 +1371,27 @@ class PACDMonitoringSystem {
             const jan4 = new Date(year, 0, 4); // Jan 4 is always in week 1
             const monday = new Date(jan4);
             monday.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (week - 1) * 7);
-            const sunday = new Date(monday);
-            sunday.setDate(monday.getDate() + 6);
+            const friday = new Date(monday);
+            friday.setDate(monday.getDate() + 4); // Friday is Monday + 4 days
 
             const fmt = d => d.toISOString().split('T')[0];
             const weekStart = fmt(monday);
-            const weekEnd   = fmt(sunday);
+            const weekEnd   = fmt(friday);
 
-            const filtered = this.records.filter(r => r.date >= weekStart && r.date <= weekEnd);
+            // Filter records for Monday-Friday only (exclude Saturday=6 and Sunday=0)
+            const filtered = this.records.filter(r => {
+                if (r.date < weekStart || r.date > weekEnd) return false;
+                const dayOfWeek = new Date(r.date).getDay();
+                return dayOfWeek !== 0 && dayOfWeek !== 6; // Exclude Sunday (0) and Saturday (6)
+            });
             if (filtered.length === 0) {
-                this.showNotification(`No records found for ${weekStart} to ${weekEnd}.`, 'warning');
+                this.showNotification(`No records found for ${weekStart} to ${weekEnd} (Mon-Fri).`, 'warning');
                 return;
             }
             this.closeExportModal();
-            this._exportSummarySheet(filtered, `Weekly Summary: ${weekStart} to ${weekEnd}`, `pacd_weekly_${weekStart}_${weekEnd}.xlsx`);
+            this._exportSummarySheet(filtered, `Weekly Summary: ${weekStart} to ${weekEnd} (Mon-Fri)`, `pacd_weekly_${weekStart}_${weekEnd}_monfri.xlsx`);
 
-        } else {
+        } else if (this._exportModalType === 'month') {
             const val = document.getElementById('monthPicker').value; // e.g. "2026-05"
             if (!val) { this.showNotification('Please select a month.', 'error'); return; }
 
@@ -1109,6 +1408,28 @@ class PACDMonitoringSystem {
             const monthLabel = new Date(`${year}-${month}-01`).toLocaleString('default', { month: 'long', year: 'numeric' });
             this.closeExportModal();
             this._exportSummarySheet(filtered, `Monthly Summary: ${monthLabel}`, `pacd_monthly_${val}.xlsx`);
+        } else if (this._exportModalType === 'custom') {
+            const fromDate = document.getElementById('customFromDate').value;
+            const toDate = document.getElementById('customToDate').value;
+
+            if (!fromDate || !toDate) {
+                this.showNotification('Please select both From and To dates.', 'error');
+                return;
+            }
+
+            if (fromDate > toDate) {
+                this.showNotification('From date cannot be later than To date.', 'error');
+                return;
+            }
+
+            const filtered = this.records.filter(r => r.date >= fromDate && r.date <= toDate);
+            if (filtered.length === 0) {
+                this.showNotification(`No records found from ${fromDate} to ${toDate}.`, 'warning');
+                return;
+            }
+
+            this.closeExportModal();
+            this._exportSummarySheet(filtered, `Custom Summary: ${fromDate} to ${toDate}`, `pacd_custom_${fromDate}_to_${toDate}.xlsx`);
         }
     }
 
@@ -1125,7 +1446,10 @@ class PACDMonitoringSystem {
                 'Amendment':          r.amendment,
                 'Yakap Assignment':   r.yakap_assignment,
                 'ER2':                r.er2,
-                'Total Clients':      r.total_clients,
+                'Inquiry':            r.inquiry || 0,
+                'Print ID/MDR':       r.print_id_mdr || 0,
+                'Transactions':       r.total_transactions || 0,
+                'Clients':            r.total_clients,
                 'Answered Survey':    r.yes_count,
                 'Did Not Answer':     r.no_count
             }));
@@ -1143,7 +1467,10 @@ class PACDMonitoringSystem {
                 'Amendment':          tot('amendment'),
                 'Yakap Assignment':   tot('yakap_assignment'),
                 'ER2':                tot('er2'),
-                'Total Clients':      totalClients,
+                'Inquiry':            tot('inquiry'),
+                'Print ID/MDR':       tot('print_id_mdr'),
+                'Transactions':       tot('total_transactions'),
+                'Clients':            tot('total_clients'),
                 'Answered Survey':    totalYes,
                 'Did Not Answer':     tot('no_count')
             });
@@ -1152,7 +1479,7 @@ class PACDMonitoringSystem {
             const byOfficer = {};
             sorted.forEach(r => {
                 if (!byOfficer[r.officer_name]) {
-                    byOfficer[r.officer_name] = { days: 0, new_member: 0, amendment: 0, yakap_assignment: 0, er2: 0, total_clients: 0, yes_count: 0, no_count: 0 };
+                    byOfficer[r.officer_name] = { days: 0, new_member: 0, amendment: 0, yakap_assignment: 0, er2: 0, inquiry: 0, print_id_mdr: 0, total_transactions: 0, total_clients: 0, yes_count: 0, no_count: 0 };
                 }
                 const o = byOfficer[r.officer_name];
                 o.days++;
@@ -1160,6 +1487,9 @@ class PACDMonitoringSystem {
                 o.amendment        += r.amendment || 0;
                 o.yakap_assignment += r.yakap_assignment || 0;
                 o.er2              += r.er2 || 0;
+                o.inquiry          += r.inquiry || 0;
+                o.print_id_mdr     += r.print_id_mdr || 0;
+                o.total_transactions += r.total_transactions || 0;
                 o.total_clients    += r.total_clients || 0;
                 o.yes_count        += r.yes_count || 0;
                 o.no_count         += r.no_count || 0;
@@ -1172,7 +1502,10 @@ class PACDMonitoringSystem {
                 'Amendment':          o.amendment,
                 'Yakap Assignment':   o.yakap_assignment,
                 'ER2':                o.er2,
-                'Total Clients':      o.total_clients,
+                'Inquiry':            o.inquiry,
+                'Print ID/MDR':       o.print_id_mdr,
+                'Transactions':       o.total_transactions,
+                'Clients':            o.total_clients,
                 'Answered Survey':    o.yes_count,
                 'Did Not Answer':     o.no_count,
                 'Survey Response Rate': o.total_clients > 0 ? ((o.yes_count / o.total_clients) * 100).toFixed(1) + '%' : 'N/A'
@@ -1182,12 +1515,12 @@ class PACDMonitoringSystem {
 
             // Sheet 1 — Daily Detail
             const ws1 = XLSX.utils.json_to_sheet(detailRows);
-            ws1['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 8 }, { wch: 14 }, { wch: 16 }, { wch: 16 }];
+            ws1['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 16 }];
             XLSX.utils.book_append_sheet(workbook, ws1, 'Daily Detail');
 
             // Sheet 2 — Officer Summary
             const ws2 = XLSX.utils.json_to_sheet(officerRows);
-            ws2['!cols'] = [{ wch: 28 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 8 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 18 }];
+            ws2['!cols'] = [{ wch: 28 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 18 }];
             XLSX.utils.book_append_sheet(workbook, ws2, 'Officer Summary');
 
             XLSX.writeFile(workbook, filename);
@@ -1239,23 +1572,29 @@ class PACDMonitoringSystem {
                     throw new Error('Invalid backup file format');
                 }
                 
-                if (confirm('This will ADD all backup records to the database. Continue?')) {
-                    for (const record of backupData.records) {
-                        await addDoc(collection(db, 'pacd_records'), {
-                            date:             record.date,
-                            officer_name:     record.officer_name,
-                            new_member:       record.new_member || 0,
-                            amendment:        record.amendment || 0,
-                            yakap_assignment: record.yakap_assignment || 0,
-                            er2:              record.er2 || 0,
-                            total_clients:    record.total_clients || 0,
-                            yes_count:        record.yes_count || 0,
-                            no_count:         record.no_count || 0,
-                            created_at:       record.created_at || new Date().toISOString()
-                        });
-                    }
-                    this.showNotification('Data restored successfully!', 'success');
-                }
+                this.confirmAction(
+                    'Restore Data',
+                    'This will ADD all backup records to the database. Continue?',
+                    async () => {
+                        for (const record of backupData.records) {
+                            await addDoc(collection(db, 'pacd_records'), {
+                                date:             record.date,
+                                officer_name:     record.officer_name,
+                                new_member:       record.new_member || 0,
+                                amendment:        record.amendment || 0,
+                                yakap_assignment: record.yakap_assignment || 0,
+                                er2:              record.er2 || 0,
+                                total_clients:    record.total_clients || 0,
+                                yes_count:        record.yes_count || 0,
+                                no_count:         record.no_count || 0,
+                                created_at:       record.created_at || new Date().toISOString()
+                            });
+                        }
+                        this.showNotification('Data restored successfully!', 'success');
+                    },
+                    'Restore',
+                    'primary'
+                );
             } catch (error) {
                 console.error('Restore error:', error);
                 this.showNotification('Error restoring data. Please check the file format.', 'error');
@@ -1347,6 +1686,23 @@ class PACDMonitoringSystem {
 // Must be on window so inline onclick handlers can access it from module scope
 const app = new PACDMonitoringSystem();
 window.app = app;
+
+// Create a single admin — call from console: createAdmin('email', 'password', 'Full Name')
+window.createAdmin = async (email, password, name = 'Admin') => {
+    try {
+        const secApp  = initializeApp(firebaseConfig, `admin-seed-${Date.now()}`);
+        const secAuth = getAuth(secApp);
+        const { user } = await createUserWithEmailAndPassword(secAuth, email, password);
+        await signOut(secAuth);
+        await deleteApp(secApp);
+        await setDoc(doc(db, 'users', user.uid), {
+            name, email, role: 'admin', disabled: false, created_at: serverTimestamp()
+        });
+        console.log(`Admin created: ${email}`);
+    } catch (e) {
+        console.error('Failed:', e.message);
+    }
+};
 
 // One-time seed function — call window.seedAccounts() from the browser console
 window.seedAccounts = async () => {

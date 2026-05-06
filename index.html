@@ -120,7 +120,7 @@
                                 <h3 class="form-section-title">Clients Served</h3>
                                 <div class="form-grid">
                                     <div class="form-group">
-                                        <label class="form-label" for="newMember">New Member:</label>
+                                        <label class="form-label" for="newMember">Registration:</label>
                                         <input type="number" id="newMember" class="form-control" min="0" value="0" required>
                                     </div>
                                     <div class="form-group">
@@ -136,8 +136,20 @@
                                         <input type="number" id="er2" class="form-control" min="0" value="0" required>
                                     </div>
                                     <div class="form-group">
-                                        <label class="form-label" for="totalClients">Total Clients Served:</label>
-                                        <input type="number" id="totalClients" class="form-control" readonly>
+                                        <label class="form-label" for="inquiry">Inquiry:</label>
+                                        <input type="number" id="inquiry" class="form-control" min="0" value="0" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="printIdMdr">Print of ID & MDR:</label>
+                                        <input type="number" id="printIdMdr" class="form-control" min="0" value="0" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="totalTransactions">Total No. of Transaction:</label>
+                                        <input type="number" id="totalTransactions" class="form-control" readonly>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="totalClients">No. of Clients Served:</label>
+                                        <input type="number" id="totalClients" class="form-control" min="0" value="0" required>
                                     </div>
                                 </div>
                             </div>
@@ -181,6 +193,8 @@
                                 <button class="btn btn-secondary" id="exportCSV">Export All</button>
                                 <button class="btn btn-secondary" id="exportWeeklySummary">Weekly Summary</button>
                                 <button class="btn btn-secondary" id="exportMonthlySummary">Monthly Summary</button>
+                                <button class="btn btn-secondary" id="exportCustomRange">Custom Range</button>
+                                <button class="btn btn-secondary" id="viewRecentlyDeleted">Recently Deleted</button>
                                 <button class="btn btn-secondary" id="viewHistory">History</button>
                                 <button class="btn btn-secondary" id="backupData">Backup Data</button>
                                 <button class="btn btn-secondary" id="restoreData">Restore Data</button>
@@ -191,17 +205,19 @@
                             <table id="recordsTable" class="data-table">
                                 <thead>
                                     <tr>
-                                        <th>ID</th>
-                                        <th>Date</th>
-                                        <th>Officer Name</th>
-                                        <th>New Member</th>
-                                        <th>Amendment</th>
-                                        <th>Yakap Assignment</th>
-                                        <th>ER2</th>
-                                        <th>Total</th>
-                                        <th>Answered</th>
-                                        <th>Not Answered</th>
-                                        <th>Actions</th>
+                                        <th title="Unique record identifier from database">ID</th>
+                                        <th title="Date when the record was created">Date</th>
+                                        <th title="Name of the officer who served the clients">Officer</th>
+                                        <th title="New member registrations count">Reg.</th>
+                                        <th title="Amendments processed count">Amend.</th>
+                                        <th title="Yakap assignments count">Yakap</th>
+                                        <th title="ER2 transactions count">ER2</th>
+                                        <th title="Inquiries and Print ID/MDR combined (Inquiry + Print ID/MDR)">Others</th>
+                                        <th title="Total number of transactions (auto-calculated sum)">Trans.</th>
+                                        <th title="Number of clients served (manual input)">Clients</th>
+                                        <th title="Clients who answered the satisfaction survey">Yes</th>
+                                        <th title="Clients who did not answer the satisfaction survey">No</th>
+                                        <th title="Edit or delete this record">Act.</th>
                                     </tr>
                                 </thead>
                                 <tbody id="recordsTableBody">
@@ -282,7 +298,7 @@
                     </div>
                     <div class="form-grid">
                         <div class="form-group">
-                            <label class="form-label" for="editNewMember">New Member:</label>
+                            <label class="form-label" for="editNewMember">Registration:</label>
                             <input type="number" id="editNewMember" class="form-control" min="0" required>
                         </div>
                         <div class="form-group">
@@ -296,6 +312,22 @@
                         <div class="form-group">
                             <label class="form-label" for="editEr2">ER2:</label>
                             <input type="number" id="editEr2" class="form-control" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="editInquiry">Inquiry:</label>
+                            <input type="number" id="editInquiry" class="form-control" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="editPrintIdMdr">Print of ID & MDR:</label>
+                            <input type="number" id="editPrintIdMdr" class="form-control" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="editTotalTransactions">Total No. of Transaction:</label>
+                            <input type="number" id="editTotalTransactions" class="form-control" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="editTotalClients">No. of Clients Served:</label>
+                            <input type="number" id="editTotalClients" class="form-control" min="0" required>
                         </div>
                     </div>
                     <div class="form-grid">
@@ -332,6 +364,24 @@
         </div>
     </div>
 
+    <!-- Recently Deleted Modal -->
+    <div id="recentlyDeletedModal" class="modal">
+        <div class="modal-content" style="max-width: 680px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Recently Deleted Records</h3>
+                <button class="modal-close" id="closeRecentlyDeletedModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: var(--gray-500); font-size: 0.85rem; margin-bottom: 16px;">
+                    Records are kept for 30 days before being permanently deleted. Records with less than 3 days remaining are highlighted.
+                </p>
+                <div id="recentlyDeletedList" class="history-list">
+                    <p style="color: var(--gray-400); text-align:center; padding: 24px 0;">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Export Summary Modal -->
     <div id="exportSummaryModal" class="modal">
         <div class="modal-content" style="max-width: 400px;">
@@ -343,12 +393,19 @@
                 <div id="weekPickerGroup" class="form-group" style="display:none;">
                     <label class="form-label">Select Week</label>
                     <input type="week" id="weekPicker" class="form-control">
-                    <p class="form-hint">Choose the week you want to export.</p>
+                    <p class="form-hint">Only Monday-Friday records will be exported (weekends excluded).</p>
                 </div>
                 <div id="monthPickerGroup" class="form-group" style="display:none;">
                     <label class="form-label">Select Month</label>
                     <input type="month" id="monthPicker" class="form-control">
                     <p class="form-hint">Choose the month you want to export.</p>
+                </div>
+                <div id="customRangeGroup" class="form-group" style="display:none;">
+                    <label class="form-label">From Date</label>
+                    <input type="date" id="customFromDate" class="form-control" style="margin-bottom: 8px;">
+                    <label class="form-label">To Date</label>
+                    <input type="date" id="customToDate" class="form-control">
+                    <p class="form-hint">Choose a custom date range to export.</p>
                 </div>
                 <div class="btn-group" style="margin-top: 16px;">
                     <button class="btn btn-primary" id="confirmExportSummary">Export</button>
@@ -400,6 +457,14 @@
                         <p style="color:var(--gray-400);text-align:center;padding:16px;">Loading...</p>
                     </div>
                 </div>
+
+                <!-- Login History -->
+                <div class="admin-section" style="margin-top: 24px;">
+                    <h4 class="admin-section-title">Login History</h4>
+                    <div id="loginHistoryList" class="officers-list" style="max-height: 250px; overflow-y: auto;">
+                        <p style="color:var(--gray-400);text-align:center;padding:16px;">Loading history...</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -408,17 +473,16 @@
     <div id="resetPasswordModal" class="modal">
         <div class="modal-content" style="max-width: 400px;">
             <div class="modal-header">
-                <h3 class="modal-title">Reset Password</h3>
+                <h3 class="modal-title">Send Password Reset Email</h3>
                 <button class="modal-close" id="closeResetPasswordModal">&times;</button>
             </div>
             <div class="modal-body">
-                <p id="resetPasswordFor" style="margin-bottom:12px;color:var(--gray-600);font-size:0.9rem;"></p>
-                <div class="form-group">
-                    <label class="form-label">New Password</label>
-                    <input type="password" id="newPasswordInput" class="form-control" placeholder="Minimum 6 characters">
-                </div>
+                <p id="resetPasswordFor" style="margin-bottom:16px;color:var(--gray-600);font-size:0.95rem;"></p>
+                <p style="margin-bottom:16px;color:var(--gray-500);font-size:0.85rem;">
+                    A password reset link will be sent to this user's email address. Please check your SPAM folder if you cannot see the email.  You can use it to set a new password.
+                </p>
                 <div class="btn-group" style="margin-top:16px;">
-                    <button class="btn btn-primary" id="confirmResetPassword">Set Password</button>
+                    <button class="btn btn-primary" id="confirmResetPassword">Send Reset Email</button>
                     <button class="btn btn-secondary" id="closeResetPasswordModal2">Cancel</button>
                 </div>
             </div>
@@ -427,6 +491,23 @@
 
     <!-- Hidden file input for data restore -->
     <input type="file" id="fileInput" accept=".json" style="display: none;">
+
+    <!-- Confirm Action Modal -->
+    <div id="confirmActionModal" class="modal">
+        <div class="modal-content" style="max-width: 400px; text-align: center; border-radius: 12px; padding: 0;">
+            <div class="modal-header" style="border-bottom: none; padding-bottom: 0;">
+                <h3 class="modal-title" id="confirmActionTitle" style="width: 100%; text-align: center;">Confirm</h3>
+                <button class="modal-close" id="closeConfirmModal" style="position: absolute; right: 16px; top: 16px;">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 16px 24px 32px;">
+                <p id="confirmActionMessage" style="margin-bottom: 24px; color: var(--gray-600); font-size: 0.95rem;"></p>
+                <div class="btn-group" style="justify-content: center;">
+                    <button class="btn btn-secondary" id="confirmCancelBtn" style="min-width: 100px;">Cancel</button>
+                    <button class="btn btn-primary" id="confirmActionBtn" style="min-width: 100px;">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
 </body>
 </html>
