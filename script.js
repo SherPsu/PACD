@@ -670,8 +670,20 @@ class PACDMonitoringSystem {
     listenRecords() {
         const q = query(collection(db, 'pacd_records'), orderBy('date', 'desc'));
         onSnapshot(q, (snapshot) => {
-            this.records = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            this.displayRecords(this.records);
+            let fetchedRecords = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            
+            // Sort by date desc, then created_at desc to keep newest entries on top
+            fetchedRecords.sort((a, b) => {
+                if (a.date !== b.date) {
+                    return (b.date || '').localeCompare(a.date || '');
+                }
+                const timeA = a.created_at || '';
+                const timeB = b.created_at || '';
+                return timeB.localeCompare(timeA);
+            });
+            
+            this.records = fetchedRecords;
+            this.filterRecords(); // Call filterRecords instead of displayRecords directly
             this.updateStats(this.records);
             this.updateCharts(this.records);
             this.updateLastUpdated();
@@ -682,7 +694,7 @@ class PACDMonitoringSystem {
     }
 
     loadRecords() {
-        this.displayRecords(this.records);
+        this.filterRecords();
     }
 
     displayRecords(records) {
@@ -1019,6 +1031,17 @@ class PACDMonitoringSystem {
         if (filterDate) {
             filtered = filtered.filter(r => r.date === filterDate);
         }
+        
+        // Explicitly sort the filtered results to ensure recent data is always on top
+        filtered.sort((a, b) => {
+            if (a.date !== b.date) {
+                return (b.date || '').localeCompare(a.date || '');
+            }
+            const timeA = a.created_at || '';
+            const timeB = b.created_at || '';
+            return timeB.localeCompare(timeA);
+        });
+        
         this.displayRecords(filtered);
     }
 
