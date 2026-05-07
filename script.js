@@ -130,6 +130,13 @@ class PACDMonitoringSystem {
         this.setDefaultDate();
         this.updateLastUpdated();
         this.startClock();
+
+        // Hide admin-only buttons for officers
+        const isAdmin = this.currentUser?.role === 'admin';
+        ['viewRecentlyDeleted', 'viewHistory', 'backupData', 'restoreData'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = isAdmin ? 'inline-flex' : 'none';
+        });
     }
 
     showLoginError(msg) {
@@ -630,7 +637,8 @@ class PACDMonitoringSystem {
             total_clients: parseInt(document.getElementById('totalClients').value) || 0,
             yes_count: parseInt(document.getElementById('yesCount').value) || 0,
             no_count: parseInt(document.getElementById('noCount').value) || 0,
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            created_by_uid: this.currentUser?.uid || null
         };
         
         try {
@@ -707,6 +715,12 @@ class PACDMonitoringSystem {
 
         tbody.innerHTML = records.map(record => {
             const others = (record.inquiry || 0) + (record.print_id_mdr || 0);
+            
+            // Check if user has permission to edit/delete
+            const canEdit = this.currentUser?.role === 'admin' || 
+                           record.created_by_uid === this.currentUser?.uid ||
+                           record.officer_name === (this.currentUser?.name || this.currentUser?.email);
+
             return `
             <tr>
                 <td>${record.id}</td>
@@ -723,8 +737,10 @@ class PACDMonitoringSystem {
                 <td>${record.no_count}</td>
                 <td>
                     <div class="action-buttons">
+                        ${canEdit ? `
                         <button class="btn-action btn-edit" onclick="app.editRecord('${record.id}')" title="Edit">&#9998;</button>
                         <button class="btn-action btn-delete" onclick="app.deleteRecord('${record.id}')" title="Delete">&#128465;</button>
+                        ` : '<span style="color:var(--gray-400);font-size:0.8rem;">Locked</span>'}
                     </div>
                 </td>
             </tr>
@@ -735,6 +751,17 @@ class PACDMonitoringSystem {
     editRecord(firestoreId) {
         const record = this.records.find(r => r.id === firestoreId);
         if (!record) return;
+
+        // Security check
+        const canEdit = this.currentUser?.role === 'admin' || 
+                       record.created_by_uid === this.currentUser?.uid ||
+                       record.officer_name === (this.currentUser?.name || this.currentUser?.email);
+        
+        if (!canEdit) {
+            this.showNotification('You do not have permission to edit this record.', 'error');
+            return;
+        }
+
         document.getElementById('editId').value = firestoreId;
         document.getElementById('editDate').value = record.date;
         const editOfficerSel = document.getElementById('editOfficerName');
@@ -808,16 +835,27 @@ class PACDMonitoringSystem {
     }
 
     async deleteRecord(firestoreId) {
+        const record = this.records.find(r => r.id === firestoreId);
+        if (!record) {
+            this.showNotification('Record not found.', 'error');
+            return;
+        }
+
+        // Security check
+        const canDelete = this.currentUser?.role === 'admin' || 
+                         record.created_by_uid === this.currentUser?.uid ||
+                         record.officer_name === (this.currentUser?.name || this.currentUser?.email);
+        
+        if (!canDelete) {
+            this.showNotification('You do not have permission to delete this record.', 'error');
+            return;
+        }
+
         this.confirmAction(
             'Delete Record',
             'Are you sure you want to delete this record? It will be moved to Recently Deleted and can be restored within 30 days.',
             async () => {
                 try {
-                    const record = this.records.find(r => r.id === firestoreId);
-                    if (!record) {
-                        this.showNotification('Record not found.', 'error');
-                        return;
-                    }
                     // Move to deleted collection with timestamp
                     const { id, ...recordData } = record;
                     const deletedRecord = {
@@ -908,6 +946,17 @@ class PACDMonitoringSystem {
                         return;
                     }
                     const data = deletedDoc.data();
+
+                    // Security check
+                    const canRestore = this.currentUser?.role === 'admin' || 
+                                      data.created_by_uid === this.currentUser?.uid ||
+                                      data.officer_name === (this.currentUser?.name || this.currentUser?.email);
+                    
+                    if (!canRestore) {
+                        this.showNotification('You do not have permission to restore this record.', 'error');
+                        return;
+                    }
+
                     // Remove system fields before restoring
                     const { original_id, deleted_at, deleted_by, expires_at, id, ...restoredData } = data;
                     
@@ -936,6 +985,12 @@ class PACDMonitoringSystem {
     }
 
     async permanentlyDeleteRecord(deletedDocId) {
+        // Only admin can permanently delete from recently deleted
+        if (this.currentUser?.role !== 'admin') {
+            this.showNotification('Only administrators can permanently delete records.', 'error');
+            return;
+        }
+
         this.confirmAction(
             'Permanent Delete',
             'Are you sure you want to permanently delete this record? This action cannot be undone.',
