@@ -906,8 +906,8 @@ body {
     .search-input { width: 100%; padding: 10px 12px; font-size: 1rem; }
 
     /* Table */
-    .table-container { overflow: hidden; }
-    .data-table { min-width: 0; font-size: 0.75rem; }
+    .table-container { width: 100%; display: block; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
+    .data-table { min-width: 800px; font-size: 0.75rem; }
     .data-table th,
     .data-table td { padding: 4px 2px; white-space: nowrap; }
     .data-table th { font-size: 9px; }
@@ -974,7 +974,8 @@ body {
     .btn { padding: 11px 12px; font-size: 0.9rem; }
 
     /* Table */
-    .data-table { min-width: 0; font-size: 0.7rem; }
+    .table-container { width: 100%; display: block; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
+    .data-table { min-width: 800px; font-size: 0.7rem; }
     .data-table th,
     .data-table td { padding: 3px 2px; }
     .data-table th { font-size: 8px; }
