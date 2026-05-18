@@ -1,16 +1,7 @@
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
 import { getFirestore, collection, addDoc, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, limit } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updatePassword } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
-
-const firebaseConfig = {
-    apiKey: "AIzaSyBqr4zFXGfITzuSJhMLG29FMPlUMFcpuek",
-    authDomain: "pacd-59a6d.firebaseapp.com",
-    projectId: "pacd-59a6d",
-    storageBucket: "pacd-59a6d.firebasestorage.app",
-    messagingSenderId: "278480981552",
-    appId: "1:278480981552:web:c5198de402ab1ec6a9a7f5",
-    measurementId: "G-0Q2TGQ0G8Y"
-};
+import { firebaseConfig } from "./config.js";
 
 const firebaseApp = initializeApp(firebaseConfig);
 const db  = getFirestore(firebaseApp);
@@ -30,6 +21,14 @@ class PACDMonitoringSystem {
     async init() {
         this.setupLoginListeners();
         this.setupAuthState();
+    }
+
+    selectSystem(system) {
+        if (system === 'er2') {
+            window.location.href = 'https://er2-monitoring.vercel.app/';
+        } else if (system === 'pacd') {
+            document.getElementById('systemSelectorModal').style.display = 'none';
+        }
     }
 
     // ─────────────────────────────────────────
@@ -219,6 +218,12 @@ class PACDMonitoringSystem {
             if (e.target.classList.contains('modal')) {
                 this.closeEditModal();
             }
+        });
+
+        // Remarks modal
+        document.getElementById('closeRemarksModal').addEventListener('click', () => this.closeRemarksModal());
+        document.getElementById('remarksModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('remarksModal')) this.closeRemarksModal();
         });
 
         // Auth
@@ -638,6 +643,7 @@ class PACDMonitoringSystem {
             total_clients: parseInt(document.getElementById('totalClients').value) || 0,
             yes_count: parseInt(document.getElementById('yesCount').value) || 0,
             no_count: parseInt(document.getElementById('noCount').value) || 0,
+            remarks: document.getElementById('remarks').value.trim() || '',
             created_at: new Date().toISOString(),
             created_by_uid: this.currentUser?.uid || null
         };
@@ -737,7 +743,7 @@ class PACDMonitoringSystem {
         const tbody = document.getElementById('recordsTableBody');
         
         if (records.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="12" class="empty-state">No records found. Start by adding a new record!</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="14" class="empty-state">No records found. Start by adding a new record!</td></tr>';
             return;
         }
 
@@ -748,6 +754,8 @@ class PACDMonitoringSystem {
             const canEdit = this.currentUser?.role === 'admin' || 
                            record.created_by_uid === this.currentUser?.uid ||
                            record.officer_name === (this.currentUser?.name || this.currentUser?.email);
+
+            const hasRemarks = record.remarks && record.remarks.trim().length > 0;
 
             return `
             <tr>
@@ -763,6 +771,9 @@ class PACDMonitoringSystem {
                 <td><strong>${record.total_clients}</strong></td>
                 <td>${record.yes_count}</td>
                 <td>${record.no_count}</td>
+                <td>
+                    ${hasRemarks ? `<button class="btn-remarks" onclick="app.viewRemarks('${record.id}')">View</button>` : '<span style="color:var(--gray-300);">-</span>'}
+                </td>
                 <td>
                     <div class="action-buttons">
                         ${canEdit ? `
@@ -813,6 +824,7 @@ class PACDMonitoringSystem {
         document.getElementById('editTotalClients').value = record.total_clients;
         document.getElementById('editYesCount').value = record.yes_count;
         document.getElementById('editNoCount').value = record.no_count;
+        document.getElementById('editRemarks').value = record.remarks || '';
         document.getElementById('editModal').classList.add('active');
     }
 
@@ -851,7 +863,8 @@ class PACDMonitoringSystem {
                 total_transactions: totalTransactions,
                 total_clients:    totalClients,
                 yes_count:        yesCount,
-                no_count:         noCount
+                no_count:         noCount,
+                remarks:          document.getElementById('editRemarks').value.trim() || ''
             });
             await this.logActivity('edited', firestoreId, editedOfficer, editedDate);
             this.closeEditModal();
@@ -1098,6 +1111,25 @@ class PACDMonitoringSystem {
 
     closeEditModal() {
         document.getElementById('editModal').classList.remove('active');
+    }
+
+    viewRemarks(recordId) {
+        const record = this.records.find(r => r.id === recordId);
+        if (!record) {
+            this.showNotification('Record not found.', 'error');
+            return;
+        }
+
+        const metadata = `${record.date} • ${record.officer_name}`;
+        const remarks = record.remarks || '(No remarks)';
+
+        document.getElementById('remarksMetadata').textContent = metadata;
+        document.getElementById('remarksContent').textContent = remarks;
+        document.getElementById('remarksModal').classList.add('active');
+    }
+
+    closeRemarksModal() {
+        document.getElementById('remarksModal').classList.remove('active');
     }
 
     filterRecords() {

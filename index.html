@@ -13,6 +13,26 @@
 </head>
 <body>
 
+    <!-- System Selector Modal -->
+    <div id="systemSelectorModal" class="system-selector-modal">
+        <div class="system-selector-content">
+            <div class="system-selector-header">
+                <h2>Welcome to MEMSEC Monitoring Systems</h2>
+                <p>Please select a system to access</p>
+            </div>
+            <div class="system-selector-buttons">
+                <button class="system-btn system-btn-pacd" onclick="app.selectSystem('pacd')">
+                    <div class="system-name">PACD</div>
+                    <div class="system-desc">Public Assistance Complaint Desk</div>
+                </button>
+                <button class="system-btn system-btn-er2" onclick="app.selectSystem('er2')">
+                    <div class="system-name">ER2</div>
+                    <div class="system-desc">ER2 Monitoring System</div>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Login Screen -->
     <div id="loginScreen" class="login-screen">
         <div class="login-left">
@@ -171,6 +191,14 @@
                                 </div>
                             </div>
 
+                            <div class="form-section">
+                                <h3 class="form-section-title">Remarks</h3>
+                                <div class="form-group">
+                                    <label class="form-label optional" for="remarks">Additional Remarks:</label>
+                                    <textarea id="remarks" class="form-control" rows="4" placeholder="Enter any additional remarks or notes about today's activities..."></textarea>
+                                </div>
+                            </div>
+
                             <div class="btn-group">
                                 <button type="submit" class="btn btn-primary">Save Record</button>
                                 <button type="button" class="btn btn-secondary" id="clearForm">Clear</button>
@@ -220,6 +248,7 @@
                                         <th title="Number of clients served (manual input)">Clients</th>
                                         <th title="Clients who answered the satisfaction survey">Yes</th>
                                         <th title="Clients who did not answer the satisfaction survey">No</th>
+                                        <th title="Additional remarks and notes">Remarks</th>
                                         <th title="Edit or delete this record">Act.</th>
                                     </tr>
                                 </thead>
@@ -343,11 +372,37 @@
                             <input type="number" id="editNoCount" class="form-control" min="0" required>
                         </div>
                     </div>
+                    <div class="form-group">
+                        <label class="form-label optional" for="editRemarks">Additional Remarks:</label>
+                        <textarea id="editRemarks" class="form-control" rows="4" placeholder="Enter any additional remarks or notes..."></textarea>
+                    </div>
                     <div class="btn-group">
                         <button type="submit" class="btn btn-primary">Update Record</button>
                         <button type="button" class="btn btn-secondary" id="cancelEdit">Cancel</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Remarks Modal -->
+    <div id="remarksModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Remarks Details</h3>
+                <button class="modal-close" id="closeRemarksModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 12px;">
+                    <p style="color: var(--gray-500); font-size: 0.85rem; margin-bottom: 4px;">Date & Officer</p>
+                    <p id="remarksMetadata" style="font-weight: 500; margin-bottom: 16px;">-</p>
+                </div>
+                <div>
+                    <p style="color: var(--gray-500); font-size: 0.85rem; margin-bottom: 4px;">Remarks</p>
+                    <div id="remarksContent" style="background: var(--gray-50); padding: 12px; border-radius: var(--radius-md); white-space: pre-wrap; word-break: break-word; line-height: 1.6; color: var(--gray-700);">
+                        -
+                    </div>
+                </div>
             </div>
         </div>
     </div>
