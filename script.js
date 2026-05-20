@@ -1,6 +1,6 @@
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
 import { getFirestore, collection, addDoc, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp, limit } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updatePassword } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updatePassword, deleteUser } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import { firebaseConfig } from "./config.js";
 
 const firebaseApp = initializeApp(firebaseConfig);
@@ -41,28 +41,34 @@ class PACDMonitoringSystem {
     setupAuthState() {
         onAuthStateChanged(auth, async (firebaseUser) => {
             if (firebaseUser) {
-                const userSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
-                if (!userSnap.exists()) {
+                try {
+                    const userSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
+                    if (!userSnap.exists()) {
+                        await signOut(auth);
+                        this.showLoginError('Account not found. Contact administrator.');
+                        return;
+                    }
+                    const userData = userSnap.data();
+                    if (userData.disabled) {
+                        await signOut(auth);
+                        this.showLoginError('Your account has been disabled. Contact administrator.');
+                        return;
+                    }
+                    // Apply pending password set by admin
+                    if (userData.pendingPassword) {
+                        try {
+                            await updatePassword(firebaseUser, userData.pendingPassword);
+                            await updateDoc(doc(db, 'users', firebaseUser.uid), { pendingPassword: null });
+                        } catch (_) {}
+                    }
+                    this.currentUser = { uid: firebaseUser.uid, email: firebaseUser.email, ...userData };
+                    this.showApp();
+                    this.unlockDateForAdmin();
+                } catch (err) {
+                    console.error('Auth state Firestore error:', err);
                     await signOut(auth);
-                    this.showLoginError('Account not found. Contact administrator.');
-                    return;
+                    this.showLoginError('Connection error. Please check your internet connection and try again.');
                 }
-                const userData = userSnap.data();
-                if (userData.disabled) {
-                    await signOut(auth);
-                    this.showLoginError('Your account has been disabled. Contact administrator.');
-                    return;
-                }
-                // Apply pending password set by admin
-                if (userData.pendingPassword) {
-                    try {
-                        await updatePassword(firebaseUser, userData.pendingPassword);
-                        await updateDoc(doc(db, 'users', firebaseUser.uid), { pendingPassword: null });
-                    } catch (_) {}
-                }
-                this.currentUser = { uid: firebaseUser.uid, email: firebaseUser.email, ...userData };
-                this.showApp();
-                this.unlockDateForAdmin();
             } else {
                 this.showLoginScreen();
             }
@@ -401,13 +407,17 @@ class PACDMonitoringSystem {
         btn.textContent = 'Creating...';
         btn.disabled = true;
 
+        let createdUser = null;
+        let secondApp = null;
         try {
             // Create Firebase Auth user without logging out current admin
-            const secondApp  = initializeApp(firebaseConfig, `sec-${Date.now()}`);
+            secondApp = initializeApp(firebaseConfig, `sec-${Date.now()}`);
             const secondAuth = getAuth(secondApp);
             const { user }   = await createUserWithEmailAndPassword(secondAuth, email, password);
+            createdUser = user;
             await signOut(secondAuth);
             await deleteApp(secondApp);
+            secondApp = null;
 
             // Store user profile in Firestore
             await setDoc(doc(db, 'users', user.uid), {
@@ -427,9 +437,20 @@ class PACDMonitoringSystem {
             await this.loadOfficerDropdowns();
         } catch (err) {
             console.error('Create officer error:', err);
+            // If Firestore write failed but Auth user was created, delete the orphaned Auth user
+            if (createdUser && err.code !== 'auth/email-already-in-use') {
+                try {
+                    const cleanupApp  = initializeApp(firebaseConfig, `cleanup-${Date.now()}`);
+                    const cleanupAuth = getAuth(cleanupApp);
+                    await signInWithEmailAndPassword(cleanupAuth, email, password);
+                    await deleteUser(cleanupAuth.currentUser);
+                    await deleteApp(cleanupApp);
+                } catch (_) {}
+            }
+            if (secondApp) { try { await deleteApp(secondApp); } catch (_) {} }
             const msg = err.code === 'auth/email-already-in-use'
                 ? 'This email is already registered.'
-                : 'Error creating account. Please try again.';
+                : `Error creating account: ${err.message || 'Please try again.'}`;
             this.showNotification(msg, 'error');
         } finally {
             btn.textContent = 'Create Account';
